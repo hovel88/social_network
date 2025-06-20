@@ -51,6 +51,9 @@ public:
         }
         auto conn = std::move(pool_.front());
         pool_.pop();
+        if (!conn->is_open()) {
+            conn = std::make_unique<pqxx::connection>(conn_str_);
+        }
         return conn;
     }
 
@@ -67,8 +70,8 @@ private:
 
 struct ScopedConnection
 {
-    std::shared_ptr<ConnectionPool>   pool;
-    std::unique_ptr<pqxx::connection> conn;
+    std::shared_ptr<ConnectionPool>   pool{nullptr};
+    std::unique_ptr<pqxx::connection> conn{nullptr};
 
     ~ScopedConnection() { pool->release_connection(conn); }
     ScopedConnection(std::shared_ptr<ConnectionPool>& p)

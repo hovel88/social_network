@@ -175,7 +175,7 @@ void App::http_start()
                     // включаем SO_REUSEADDR и SO_REUSEPORT
                     .set_socket_options(set_options_)
                     // лимит размера тела запроса, защита от DDoS: 1 MB
-                    .set_payload_max_length(1024 * 1024)
+                    .set_payload_max_length(1 * 1024 * 1024)
                     // обработчик ошибок
                     .set_error_handler([this](const auto& req, auto& res) { error_handler(req, res); })
                     // обработчик исключений
@@ -523,7 +523,8 @@ void App::db_create_users_table()
         pqxx::work tx(*scoped_conn.conn.get());
         tx.exec(query).no_rows();
         tx.commit();
-    } catch (std::exception& ex) {
+    }
+    catch (std::exception& ex) {
         LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
     }
 }
