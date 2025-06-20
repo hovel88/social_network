@@ -1,0 +1,11 @@
+.vscode/
+
+_extern/*
+!_extern/.gitkeep
+
+postgres_db
+service/cmake-build
+
+*.o
+*.a
+*.d
