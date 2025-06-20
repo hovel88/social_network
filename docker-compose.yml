@@ -1,0 +1,48 @@
+networks:
+  net:
+    driver: bridge
+
+services:
+  social_srv:
+    image: social_network:latest
+    build:
+      context: ./service/
+      dockerfile: Dockerfile
+    container_name: "social_srv"
+    hostname: "social_srv"
+    # restart: on-failure
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    environment:
+      - PGSQL_ENDPOINT=postgresql://postgres_db:5432/postgres
+      - PGSQL_LOGIN=postgres
+      - PGSQL_PASSWORD=pgpass
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=10
+      - HTTP_THREADS_COUNT=1
+    networks:
+      - net
+    ports:
+      - 6000:6000
+
+
+  postgres_db:
+    image: postgres:16-alpine
+    container_name: "postgres_db"
+    hostname: "postgres_db"
+    # restart: on-failure
+    environment:
+      - POSTGRES_PASSWORD=pgpass
+    volumes:
+      - ./postgres_db:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - net
+    ports:
+      - 15432:5432
+
