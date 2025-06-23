@@ -68,9 +68,9 @@ App::~App()
     }
 }
 
-App::App()
+App::App(std::shared_ptr<cxxopts::ParseResult> cli_opts)
 :   logger_(Logging::configure_logger({ {"type", "stdout"}, {"color", "true"}, {"level", "5"} })),
-    conf_(std::make_shared<Configuration>(logger_))
+    conf_(std::make_shared<Configuration>(logger_, std::move(cli_opts)))
 {
 }
 

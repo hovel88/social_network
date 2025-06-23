@@ -87,11 +87,13 @@ class App
 {
 public:
     ~App();
-    App();
+    App() = delete;
     App(const App&) = delete;
     App(App&&) = delete;
     App& operator=(const App&) = delete;
     App& operator=(App&&) = delete;
+
+    explicit App(std::shared_ptr<cxxopts::ParseResult> cli_opts);
 
     void run();
 

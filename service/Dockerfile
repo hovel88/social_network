@@ -99,6 +99,23 @@ rm -rf ./cpp-httplib/
 EOF
 RUN chmod u+x /install_cpp-httplib.sh && ./install_cpp-httplib.sh
 
+COPY <<EOF /install_cxxopts.sh
+#!/bin/sh
+# set -eux
+
+git clone https://github.com/jarro2783/cxxopts.git
+cd cxxopts
+git checkout v3.2.0
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DCXXOPTS_BUILD_TESTS=OFF -DCXXOPTS_BUILD_EXAMPLES=OFF ..
+cmake --build . --parallel 4
+cmake --install .
+cd ../..
+rm -rf ./cxxopts/
+EOF
+RUN chmod u+x /install_cxxopts.sh && ./install_cxxopts.sh
+
 WORKDIR /app-src
 COPY . /app-src
 
