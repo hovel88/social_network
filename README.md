@@ -1,10 +1,9 @@
 # Сервис социальной сети (курс Highload Architect)
 
-## Домашние задания
+## ДЗ 1: Ручная проверка
 
-### ДЗ 1: Ручная проверка
-
-* развернуть сервис и БД (если разворачивается впервые, то не забыть рядом с файлом `docker-compose.yml` создать каталог `postgres_db`)
+* развернуть сервис и БД  
+(если разворачивается впервые, то не забыть рядом с файлом `docker-compose.yml` создать каталог `postgres_db`)
 
 ```bash
 docker compose up -d
@@ -58,7 +57,7 @@ curl -X GET http://localhost:6000/user/get/8ef1dac2-cf63-473f-82b7-c52876539deb
 {"biography":"Программирование, музыка","birthdate":"1990-01-01","city":"Москва","first_name":"Иван","id":"8ef1dac2-cf63-473f-82b7-c52876539deb","second_name":"Иванов"}
 ```
 
-* проверить, что таблицы в БД существуют
+* проверить, что таблица в БД существует
 
 ```bash
 docker exec -it postgres_db psql -U postgres -c "\dt"
@@ -81,6 +80,16 @@ docker exec -it postgres_db psql -U postgres -c "SELECT * FROM users;"
  8ef1dac2-cf63-473f-82b7-c52876539deb | 2025-06-19 13:15:25.811325 | $2a$12$dq2HNswwr0u1PGQqxdO9muTTRSfMfjoG8I3Yd.hZ/OVCELxGPd29K | Иван       | Иванов      | 1990-01-01 | Программирование, музыка | Москва
 (2 rows)
 ```
+
+* тест SQL-инъекции при отправке ID  
+(если вернет 400 — защита работает, проверяется формат UUID)
+
+```bash
+curl -X POST http://localhost:6000/login \
+  -H "Content-Type: application/json" \
+  -d '{"id": "1 OR 1=1", "password": "123"}'
+```
+
 
 
 ## Сборка и настройка сервиса
@@ -127,18 +136,50 @@ docker compose down
 
 ### Тестирование
 
-* тест SQL-инъекции при отправке ID (если вернет 400 — защита работает, проверяется формат UUID)
+* добавить в образ поддержку команды 'host'
 
 ```bash
-curl -X POST http://localhost:6000/login \
-  -H "Content-Type: application/json" \
-  -d '{"id": "1 OR 1=1", "password": "123"}'
+apk update
+apk add bind-tools
+# host social_srv
+social_srv has address 172.21.0.3
 ```
 
 * нагрузочный тест
 
 ```bash
-wrk -t12 -c400 -d30s http://localhost:6000/user/get/123
+docker pull skandyla/wrk
+docker run -it --rm --network social_network_net --entrypoint=/bin/sh skandyla/wrk
+
+apk update
+apk add bind-tools
+
+/data # host social_srv
+social_srv has address 172.21.0.3
+
+# тест с настройками сервиса (HTTP_THREADS_COUNT=1, HTTP_QUEUE_CAPACITY=10)
+wrk -t 12 -c 400 -d 30s http://172.21.0.3:6000/user/get/8ef1dac2-cf63-473f-82b7-c52876539deb
+Running 30s test @ http://172.21.0.3:6000/user/get/8ef1dac2-cf63-473f-82b7-c52876539deb
+  12 threads and 400 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     3.63ms   14.32ms   1.67s    99.50%
+    Req/Sec   366.86    181.43     1.44k    76.95%
+  58382 requests in 30.08s, 27.39MB read
+  Socket errors: connect 10, read 0, write 0, timeout 0
+Requests/sec:   1940.80
+Transfer/sec:      0.91MB
+
+# тест с настройками сервиса (HTTP_THREADS_COUNT=10, HTTP_QUEUE_CAPACITY=100)
+wrk -t 12 -c 400 -d 30s http://172.21.0.3:6000/user/get/8ef1dac2-cf63-473f-82b7-c52876539deb
+Running 30s test @ http://172.21.0.3:6000/user/get/8ef1dac2-cf63-473f-82b7-c52876539deb
+  12 threads and 400 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    24.26ms   59.03ms   1.72s    99.05%
+    Req/Sec   343.95    319.58     8.47k    94.27%
+  121617 requests in 30.08s, 57.06MB read
+  Socket errors: connect 0, read 0, write 0, timeout 23
+Requests/sec:   4043.65
+Transfer/sec:      1.90MB
 ```
 
 * мониторинг соединений в PostgreSQL

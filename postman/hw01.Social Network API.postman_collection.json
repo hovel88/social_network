@@ -1,0 +1,142 @@
+{
+	"info": {
+		"_postman_id": "a36ca1fc-7462-4991-9001-a6a027d28de3",
+		"name": "Social Network API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "46111344",
+		"_collection_link": "https://dmitrylachugin.postman.co/workspace/Dmitry-Lachugin's-Workspace~6e0540de-7921-4096-8673-ce4b822b0843/collection/46111344-a36ca1fc-7462-4991-9001-a6a027d28de3?action=share&source=collection_link&creator=46111344"
+	},
+	"item": [
+		{
+			"name": "Register User",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+							"pm.test(\"Response has user_id\", () => {",
+							"    const json = pm.response.json();",
+							"    pm.expect(json.user_id).to.be.a('string');",
+							"    pm.environment.set(\"user_id\", json.user_id);",
+							"});"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"first_name\": \"Трололо\",\n  \"second_name\": \"Ололоев\",\n  \"birthdate\": \"1990-12-12\",\n  \"biography\": \"Программирование, музыка\",\n  \"city\": \"Москва\",\n  \"password\": \"secret123\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/user/register",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"user",
+						"register"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Login",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+							"pm.test(\"Response has token\", () => {",
+							"    pm.expect(pm.response.json().token).to.eq(pm.environment.get(\"user_id\"));",
+							"});"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"id\": \"{{user_id}}\",\n  \"password\": \"secret123\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/login",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get User Profile",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+							"pm.test(\"Check user data\", () => {",
+							"    const json = pm.response.json();",
+							"    pm.expect(json.first_name).to.eq(\"Трололо\");",
+							"    pm.expect(json.city).to.eq(\"Москва\");",
+							"});"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/user/get/{{user_id}}",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"user",
+						"get",
+						"{{user_id}}"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:6000"
+		},
+		{
+			"key": "user_id",
+			"value": "Вставьте UUID пользователя после регистрации"
+		}
+	]
+}
