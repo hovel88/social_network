@@ -21,8 +21,8 @@ const int config_max::http_threads_count = 10;
 const int config_def::http_threads_count = 1;
 const int config_min::http_threads_count = 1;
 
-const int config_max::http_queue_capacity = 1024;
-const int config_def::http_queue_capacity = 10;
+const int config_max::http_queue_capacity = 4096;
+const int config_def::http_queue_capacity = 1024;
 const int config_min::http_queue_capacity = 1;
 
 const std::unordered_map<std::string, std::string> config_def::logging_config = { {"type", "stdout"}, {"color", "true"}, {"level", "1"} };

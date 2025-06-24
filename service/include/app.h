@@ -6,7 +6,7 @@
 #include <httplib.h>
 #include "logger/logger.h"
 #include "configuration/configuration.h"
-#include "thread_pool/thread_pool.h"
+#include "helpers/thread_pool.h"
 
 namespace SocialNetwork {
 
@@ -31,7 +31,7 @@ public:
     }
 
 private:
-    ThreadPooling::ThreadPool pool_;
+    ThreadHelpers::ThreadPool pool_;
 };
 
 class ConnectionPool

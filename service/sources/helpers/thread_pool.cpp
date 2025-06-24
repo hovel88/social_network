@@ -1,10 +1,12 @@
 #include <format>
 #include "helpers/thread.h"
-#include "thread_pool/thread_pool.h"
+#include "helpers/thread_pool.h"
 
 namespace SocialNetwork {
 
-ThreadPooling::ThreadPool::~ThreadPool()
+namespace ThreadHelpers {
+
+ThreadPool::~ThreadPool()
 {
     threads_stop_ = true;
     tasks_condition_.notify_all();
@@ -13,10 +15,10 @@ ThreadPooling::ThreadPool::~ThreadPool()
     }
 }
 
-ThreadPooling::ThreadPool::ThreadPool(const std::string_view name,
-                                      std::shared_ptr<Logging::Logger> logger,
-                                      uint64_t threads_count,
-                                      uint64_t tasks_capacity)
+ThreadPool::ThreadPool(const std::string_view name,
+                       std::shared_ptr<Logging::Logger> logger,
+                       uint64_t threads_count,
+                       uint64_t tasks_capacity)
 :   logger_(std::move(logger)),
     threads_max_count_(threads_count),
     tasks_max_capacity_(tasks_capacity)
@@ -31,7 +33,7 @@ ThreadPooling::ThreadPool::ThreadPool(const std::string_view name,
     }
 }
 
-void ThreadPooling::ThreadPool::wait_all()
+void ThreadPool::wait_all()
 {
     std::unique_lock<std::mutex> lock(task_results_all_mutex_);
     task_results_all_condition_.wait(lock, [this]()->bool {
@@ -41,7 +43,7 @@ void ThreadPooling::ThreadPool::wait_all()
 
 // --------------------------------------------------------
 
-void ThreadPooling::ThreadPool::run(const std::string thread_name)
+void ThreadPool::run(const std::string thread_name)
 {
     ThreadHelpers::block_signals();
     while (!threads_stop_) {
@@ -72,5 +74,7 @@ void ThreadPooling::ThreadPool::run(const std::string thread_name)
         task_results_all_condition_.notify_all();
     }
 }
+
+} // namespace ThreadHelpers
 
 } // namespace SocialNetwork
