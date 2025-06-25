@@ -42,6 +42,7 @@ FROM alpine:3.19.7 AS builder
 RUN apk update \
  && apk add build-base linux-headers \
         openssl openssl-dev openssl-libs-static \
+        curl curl-dev \
         libev libev-dev c-ares c-ares-dev c-ares-static \
         libpq libpq-dev \
         git nlohmann-json \
@@ -116,6 +117,25 @@ rm -rf ./cxxopts/
 EOF
 RUN chmod u+x /install_cxxopts.sh && ./install_cxxopts.sh
 
+COPY <<EOF /install_prometheus-cpp.sh
+#!/bin/sh
+# set -eux
+
+git clone https://github.com/jupp0r/prometheus-cpp.git
+cd prometheus-cpp
+git checkout v1.3.0
+git submodule init
+git submodule update
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DENABLE_TESTING=OFF ..
+cmake --build . --parallel 4
+cmake --install .
+cd ../..
+rm -rf ./prometheus-cpp/
+EOF
+RUN chmod u+x /install_prometheus-cpp.sh && ./install_prometheus-cpp.sh
+
 WORKDIR /app-src
 COPY . /app-src
 
@@ -131,4 +151,4 @@ RUN apk update \
 
 WORKDIR /service
 COPY --from=builder /app-src/_build/bin/social_network /service/
-CMD ["./social_network"]
+ENTRYPOINT ["./social_network"]
