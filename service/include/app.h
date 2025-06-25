@@ -4,11 +4,83 @@
 #include <mutex>
 #include <pqxx/pqxx>
 #include <httplib.h>
+#include <prometheus/counter.h>
+#include <prometheus/histogram.h>
+#include <prometheus/exposer.h>
+#include <prometheus/registry.h>
 #include "logger/logger.h"
 #include "configuration/configuration.h"
 #include "helpers/thread_pool.h"
 
 namespace SocialNetwork {
+
+class Metrics {
+public:
+    Metrics()
+    :   latency_buckets_{0.05, 0.1, 0.5, 1.0, 2.0, 5.0},
+        registry_(std::make_shared<prometheus::Registry>()) {
+
+        auto& total_c = prometheus::BuildCounter()
+            .Name("http_requests_total")
+            .Help("HTTP total requests counter")
+            .Register(*registry_);
+        total_requests_login_         = &total_c.Add({{"endpoint", "/login"}});
+        total_requests_user_register_ = &total_c.Add({{"endpoint", "/user/register"}});
+        total_requests_user_get_id_   = &total_c.Add({{"endpoint", "/user/get/:id"}});
+        total_requests_user_search_   = &total_c.Add({{"endpoint", "/user/search"}});
+
+        auto& failed_c = prometheus::BuildCounter()
+            .Name("http_requests_failed_total")
+            .Help("HTTP failed requests counter")
+            .Register(*registry_);
+        failed_requests_login_         = &failed_c.Add({{"endpoint", "/login"}});
+        failed_requests_user_register_ = &failed_c.Add({{"endpoint", "/user/register"}});
+        failed_requests_user_get_id_   = &failed_c.Add({{"endpoint", "/user/get/:id"}});
+        failed_requests_user_search_   = &failed_c.Add({{"endpoint", "/user/search"}});
+
+        auto& latency_h = prometheus::BuildHistogram()
+            .Name("http_request_duration_seconds")
+            .Help("HTTP request latency")
+            .Register(*registry_);
+        latency_requests_login_         = &latency_h.Add({{"endpoint", "/login"}}, latency_buckets_);
+        latency_requests_user_register_ = &latency_h.Add({{"endpoint", "/user/register"}}, latency_buckets_);
+        latency_requests_user_get_id_   = &latency_h.Add({{"endpoint", "/user/get/:id"}}, latency_buckets_);
+        latency_requests_user_search_   = &latency_h.Add({{"endpoint", "/user/search"}}, latency_buckets_);
+    }
+
+    std::shared_ptr<prometheus::Registry> registry() const { return registry_; }
+
+    void count_request_login()         { total_requests_login_->Increment(); }
+    void count_request_user_register() { total_requests_user_register_->Increment(); }
+    void count_request_user_get_id()   { total_requests_user_get_id_->Increment(); }
+    void count_request_user_search()   { total_requests_user_search_->Increment(); }
+
+    void count_failed_request_login()         { failed_requests_login_->Increment(); }
+    void count_failed_request_user_register() { failed_requests_user_register_->Increment(); }
+    void count_failed_request_user_get_id()   { failed_requests_user_get_id_->Increment(); }
+    void count_failed_request_user_search()   { failed_requests_user_search_->Increment(); }
+
+    void store_latency_request_login(double seconds)         { latency_requests_login_->Observe(seconds); }
+    void store_latency_request_user_register(double seconds) { latency_requests_user_register_->Observe(seconds); }
+    void store_latency_request_user_get_id(double seconds)   { latency_requests_user_get_id_->Observe(seconds); }
+    void store_latency_request_user_search(double seconds)   { latency_requests_user_search_->Observe(seconds); }
+
+private:
+    const std::vector<double>             latency_buckets_{};
+    std::shared_ptr<prometheus::Registry> registry_{nullptr};
+    prometheus::Counter*                  total_requests_login_{nullptr};
+    prometheus::Counter*                  total_requests_user_register_{nullptr};
+    prometheus::Counter*                  total_requests_user_get_id_{nullptr};
+    prometheus::Counter*                  total_requests_user_search_{nullptr};
+    prometheus::Counter*                  failed_requests_login_{nullptr};
+    prometheus::Counter*                  failed_requests_user_register_{nullptr};
+    prometheus::Counter*                  failed_requests_user_get_id_{nullptr};
+    prometheus::Counter*                  failed_requests_user_search_{nullptr};
+    prometheus::Histogram*                latency_requests_login_{nullptr};
+    prometheus::Histogram*                latency_requests_user_register_{nullptr};
+    prometheus::Histogram*                latency_requests_user_get_id_{nullptr};
+    prometheus::Histogram*                latency_requests_user_search_{nullptr};
+};
 
 class ThreadPoolAdaptor : public httplib::TaskQueue
 {
@@ -100,11 +172,16 @@ public:
 private:
     std::shared_ptr<Logging::Logger> logger_{nullptr};
     std::shared_ptr<Configuration>   conf_{nullptr};
+    std::vector<std::string>         indexes_to_drop_{};
+    std::vector<std::string>         indexes_to_create_{};
 
     std::unique_ptr<httplib::Server> http_server_{nullptr};
     OnLivenessCheckFunc              liveness_check_cb_{};
     OnReadinessCheckFunc             readiness_check_cb_{};
     std::thread                      http_server_thread_{};
+
+    std::unique_ptr<prometheus::Exposer> exposer_{nullptr};
+    std::shared_ptr<Metrics>             metrics_{nullptr};
 
     std::shared_ptr<ConnectionPool> db_pool_{nullptr};
     std::thread                     db_client_thread_{};
@@ -119,9 +196,10 @@ private:
     void on_readiness_check(OnReadinessCheckFunc&& cb) { readiness_check_cb_ = std::move(cb); }
 
     bool pre_routing_handler(const httplib::Request& req, httplib::Response& res);
-    void login_handler(const httplib::Request& req, httplib::Response& res);
-    void user_register_handler(const httplib::Request& req, httplib::Response& res);
-    void user_get_id_handler(const httplib::Request& req, httplib::Response& res);
+    bool login_handler(const httplib::Request& req, httplib::Response& res);
+    bool user_register_handler(const httplib::Request& req, httplib::Response& res);
+    bool user_get_id_handler(const httplib::Request& req, httplib::Response& res);
+    bool user_search_handler(const httplib::Request& req, httplib::Response& res);
     void liveness_handler(const httplib::Request& req, httplib::Response& res);
     void readiness_handler(const httplib::Request& req, httplib::Response& res);
     void post_routing_handler(const httplib::Request& req, httplib::Response& res);
@@ -130,6 +208,8 @@ private:
     void log_handler(const httplib::Request& req, const httplib::Response& res);
 
     void db_create_users_table();
+    void db_create_index_users_names_search();
+    void db_drop_index_users_names_search();
 };
 
 } // namespace SocialNetwork

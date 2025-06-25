@@ -24,7 +24,9 @@ std::shared_ptr<cxxopts::ParseResult> configure_cli_options(int argc, char** arg
         ("http_listening", "Address and port (ip:port) HTTP server starts listening on", cxxopts::value<std::string>())
         ("http_queue",     "Max available requests queue capacity for HTTP server", cxxopts::value<int>())
         ("http_threads",   "Max available threads count to handle HTTP requests", cxxopts::value<int>())
-        // TODO: добавлять сюда ключи для создания/удаления индексов в БД
+        ("prometheus_port","Port Prometheus server starts listening on", cxxopts::value<int>())
+        ("i,index_add",  "Add indexes into DB (names_search) ", cxxopts::value<std::vector<std::string>>())
+        ("I,index_drop", "Drop indexes into DB (names_search) ", cxxopts::value<std::vector<std::string>>())
         ;
 
         auto result = options.parse(argc, argv);
@@ -73,6 +75,7 @@ void Configuration::show_configuration() const
     ss << "\n  http.listening="         << std::quoted(current_configuration_.http_listening);
     ss << "\n  http.threads_count="     << current_configuration_.http_threads_count;
     ss << "\n  http.queue_capacity="    << current_configuration_.http_queue_capacity;
+    ss << "\n  prometheus.listening="   << current_configuration_.prometheus_listening;
     LOG_DEBUG(ss.str());
 }
 
@@ -145,6 +148,19 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
         }
     }
 
+    {
+        const std::string key("PROMETHEUS_PORT");
+        if (EnvironmentHelpers::has(key)) {
+            auto env = EnvironmentHelpers::get(key);
+            auto str = StringHelpers::trim(env.value());
+            int val = 0;
+            if (NumberParserHelpers::try_parse_int(str, val)) {
+                current_configuration_.prometheus_port = val;
+                LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+            }
+        }
+    }
+
     LOG_INFOR(std::format("trying to read configuration from command line options"));
     const auto& cli = *cli_opts;
 
@@ -206,6 +222,15 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
     }
     catch (...) {}
 
+    try {
+        const std::string key("prometheus_port");
+        if (cli.count(key)) {
+            auto val = cli[key].as<int>();
+            current_configuration_.prometheus_port = val;
+            LOG_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
+        }
+    }
+    catch (...) {}
 
     auto errors = current_configuration_.validate();
     for (auto& err : errors) {

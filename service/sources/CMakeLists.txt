@@ -41,3 +41,9 @@ target_link_libraries(${SERVICE_SRC_LIB}
                 crypto
                 bcrypt
 )
+
+find_package(prometheus-cpp REQUIRED)
+target_link_libraries(${SERVICE_SRC_LIB}
+    PRIVATE     prometheus-cpp::core
+                prometheus-cpp::pull
+)

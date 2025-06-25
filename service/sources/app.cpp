@@ -70,8 +70,21 @@ App::~App()
 
 App::App(std::shared_ptr<cxxopts::ParseResult> cli_opts)
 :   logger_(Logging::configure_logger({ {"type", "stdout"}, {"color", "true"}, {"level", "5"} })),
-    conf_(std::make_shared<Configuration>(logger_, std::move(cli_opts)))
+    conf_(std::make_shared<Configuration>(logger_, cli_opts))
 {
+    try {
+        const auto& cli = *cli_opts;
+
+        const std::string drop_key("index_drop");
+        if (cli.count(drop_key)) {
+            indexes_to_drop_ = cli[drop_key].as<std::vector<std::string>>();
+        }
+        const std::string create_key("index_add");
+        if (cli.count(create_key)) {
+            indexes_to_create_ = cli[create_key].as<std::vector<std::string>>();
+        }
+    }
+    catch (...) {}
 }
 
 void App::run()
@@ -132,6 +145,16 @@ void App::db_start()
             db_client_thread_ = std::thread([this]()->void {
                 ThreadHelpers::block_signals();
                 db_create_users_table();
+                for (const auto& one : indexes_to_drop_) {
+                    if (one == "names_search") {
+                        db_drop_index_users_names_search();
+                    }
+                }
+                for (const auto& one : indexes_to_create_) {
+                    if (one == "names_search") {
+                        db_create_index_users_names_search();
+                    }
+                }
             });
             ThreadHelpers::set_name(db_client_thread_.native_handle(), db_client_thread_name);
         }
@@ -148,6 +171,12 @@ void App::http_start()
     &&  http_server_->is_running()) return;
 
     try {
+        // регистрируем сервер для Prometheus-метрик
+        exposer_ = std::make_unique<prometheus::Exposer>(conf_->config().prometheus_listening);
+        metrics_ = std::make_shared<Metrics>();
+        exposer_->RegisterCollectable(metrics_->registry());
+
+        // регистрируем HTTP-сервер
         http_server_ = std::make_unique<httplib::Server>();
         if (!http_server_->is_valid()) throw std::runtime_error("server has an error...");
 
@@ -187,9 +216,38 @@ void App::http_start()
                     // логирование запросов
                     .set_logger([this](const auto& req, const auto& res) { log_handler(req, res); })
                     // обработчики
-                    .Post("/login", [this](const auto& req, auto& res) { login_handler(req, res); })
-                    .Post("/user/register", [this](const auto& req, auto& res) { user_register_handler(req, res); })
-                    .Get("/user/get/:id", [this](const auto& req, auto& res) { user_get_id_handler(req, res); })
+                    .Post("/login", [this](const auto& req, auto& res) {
+                        auto start = std::chrono::steady_clock::now();
+                        bool ok    = login_handler(req, res);
+                        auto end   = std::chrono::steady_clock::now();
+                        metrics_->count_request_login();
+                        if (!ok) metrics_->count_failed_request_login();
+                        if (ok)  metrics_->store_latency_request_login(std::chrono::duration<double>(end - start).count());
+                    })
+                    .Post("/user/register", [this](const auto& req, auto& res) {
+                        auto start = std::chrono::steady_clock::now();
+                        bool ok    = user_register_handler(req, res);
+                        auto end   = std::chrono::steady_clock::now();
+                        metrics_->count_request_user_register();
+                        if (!ok) metrics_->count_failed_request_user_register();
+                        if (ok)  metrics_->store_latency_request_user_register(std::chrono::duration<double>(end - start).count());
+                    })
+                    .Get("/user/get/:id", [this](const auto& req, auto& res) {
+                        auto start = std::chrono::steady_clock::now();
+                        bool ok    = user_get_id_handler(req, res);
+                        auto end   = std::chrono::steady_clock::now();
+                        metrics_->count_request_user_get_id();
+                        if (!ok) metrics_->count_failed_request_user_get_id();
+                        if (ok)  metrics_->store_latency_request_user_get_id(std::chrono::duration<double>(end - start).count());
+                    })
+                    .Get("/user/search", [this](const auto& req, auto& res) {
+                        auto start = std::chrono::steady_clock::now();
+                        bool ok    = user_search_handler(req, res);
+                        auto end   = std::chrono::steady_clock::now();
+                        metrics_->count_request_user_search();
+                        if (!ok) metrics_->count_failed_request_user_search();
+                        if (ok)  metrics_->store_latency_request_user_search(std::chrono::duration<double>(end - start).count());
+                    })
                     .Get("/livez",  [this](const auto& req, auto& res) { liveness_handler(req, res); })
                     .Get("/readyz", [this](const auto& req, auto& res) { readiness_handler(req, res); });
 
@@ -210,32 +268,36 @@ bool App::pre_routing_handler(const httplib::Request& req, httplib::Response& re
     ||  req.path == "/readyz"
     ||  req.path == "/login"
     ||  req.path == "/user/register"
-    ||  req.path.starts_with("/user/get/")) {
+    ||  req.path.starts_with("/user/get/")
+    ||  req.path == "/user/search") {
         return true;
     }
     res.status = httplib::StatusCode::NotImplemented_501;
     return false;
 }
 
-void App::login_handler(const httplib::Request& req, httplib::Response& res)
+bool App::login_handler(const httplib::Request& req, httplib::Response& res)
 {
     auto json = nlohmann::json::parse(req.body);
 
     if (!json.contains("id")
     ||  !json.contains("password")) {
+        LOG_ERROR(std::format("login_handler: request params does not contain 'id' and/or 'password'"));
         res.status = httplib::StatusCode::BadRequest_400;
-        return;
+        return false;
     }
 
     if (!json["id"].is_string()
     ||  !json["password"].is_string()) {
+        LOG_ERROR(std::format("login_handler: request params 'id' and 'password' should be a string"));
         res.status = httplib::StatusCode::BadRequest_400;
-        return;
+        return false;
     }
 
     if (!is_valid_uuid_(json["id"].get<std::string>())) {
+        LOG_ERROR(std::format("login_handler: request param 'id' is not an UUID format"));
         res.status = httplib::StatusCode::BadRequest_400;
-        return;
+        return false;
     }
 
     static const std::string query =
@@ -243,6 +305,7 @@ void App::login_handler(const httplib::Request& req, httplib::Response& res)
         "  FROM users "
         " WHERE id = $1";
 
+    bool ok = false;
     nlohmann::json response{};
     try {
         const std::string id{json["id"].get<std::string>()};
@@ -254,19 +317,20 @@ void App::login_handler(const httplib::Request& req, httplib::Response& res)
         if (result.empty()) {
             // пользователь не найден
             res.status = httplib::StatusCode::NotFound_404;
-            return;
-        }
-
-        for (const auto& row : result) {
-            const auto& [row_id, row_pwd_hash] = row.as<std::string, std::string>();
-            if (!BCrypt::validatePassword(pwd, row_pwd_hash)) {
-                // неверный пароль
-                res.status = httplib::StatusCode::BadRequest_400;
-                return;
+        } else {
+            for (const auto& row : result) {
+                const auto& [row_id, row_pwd_hash] = row.as<std::string, std::string>();
+                if (!BCrypt::validatePassword(pwd, row_pwd_hash)) {
+                    // неверный пароль
+                    LOG_ERROR(std::format("login_handler: request param 'password' is not match"));
+                    res.status = httplib::StatusCode::BadRequest_400;
+                    return false;
+                }
+                // успешная аутентификация
+                response = {{"token", row_id}};
+                break;
             }
-            // успешная аутентификация
-            response = {{"token", row_id}};
-            break;
+            ok = true;
         }
     } catch (std::exception& ex) {
         LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
@@ -276,9 +340,10 @@ void App::login_handler(const httplib::Request& req, httplib::Response& res)
     }
 
     res.set_content(response.dump(), "application/json");
+    return ok;
 }
 
-void App::user_register_handler(const httplib::Request& req, httplib::Response& res)
+bool App::user_register_handler(const httplib::Request& req, httplib::Response& res)
 {
     auto json = nlohmann::json::parse(req.body);
 
@@ -288,8 +353,9 @@ void App::user_register_handler(const httplib::Request& req, httplib::Response& 
     ||  !json.contains("birthdate")
     ||  !json.contains("biography")
     ||  !json.contains("city")) {
+        LOG_ERROR(std::format("login_handler: request params does not contain 'password', 'first_name', 'second_name', 'birthdate', 'biography' and/or 'city'"));
         res.status = httplib::StatusCode::BadRequest_400;
-        return;
+        return false;
     }
 
     if (!json["password"].is_string()
@@ -298,14 +364,16 @@ void App::user_register_handler(const httplib::Request& req, httplib::Response& 
     ||  !json["birthdate"].is_string()
     ||  !json["biography"].is_string()
     ||  !json["city"].is_string()) {
+        LOG_ERROR(std::format("user_register_handler: request params 'password', 'first_name', 'second_name', 'birthdate', 'biography' and 'city' should be a string"));
         res.status = httplib::StatusCode::BadRequest_400;
-        return;
+        return false;
     }
 
     if (json["password"].get<std::string>().length() < 8) {
         // минимальная длина 8 символов
+        LOG_ERROR(std::format("user_register_handler: request param 'password' should contain at least 8 characters"));
         res.status = httplib::StatusCode::BadRequest_400;
-        return;
+        return false;
     }
 
     {
@@ -314,8 +382,9 @@ void App::user_register_handler(const httplib::Request& req, httplib::Response& 
         ss >> std::get_time(&t, "%Y-%m-%d"); // 2017-02-01
         if (ss.fail() || t.tm_year < 0 || t.tm_year > 107) {
             // 18лет (с 2007 г.д.), 2007 - 1900 = 107
+            LOG_ERROR(std::format("user_register_handler: request param 'birthdate' is invalid"));
             res.status = httplib::StatusCode::BadRequest_400;
-            return;
+            return false;
         }
     }
 
@@ -324,6 +393,7 @@ void App::user_register_handler(const httplib::Request& req, httplib::Response& 
         "     VALUES ($1, $2, $3, $4, $5, $6) "
         "  RETURNING id";
 
+    bool ok = false;
     nlohmann::json response{};
     try {
         const std::string pwd{json["password"].get<std::string>()};
@@ -341,14 +411,14 @@ void App::user_register_handler(const httplib::Request& req, httplib::Response& 
         if (result.empty()) {
             response = {{"code", 500}, {"message", std::format("Can't register user '{} {}'", fname, sname)}};
             res.status = httplib::StatusCode::InternalServerError_500;
-            return;
-        }
-
-        for (const auto& row : result) {
-            const auto& [row_id] = row.as<std::string>();
-            // успешная регистрация
-            response = {{"user_id", row_id}};
-            break;
+        } else {
+            for (const auto& row : result) {
+                const auto& [row_id] = row.as<std::string>();
+                // успешная регистрация
+                response = {{"user_id", row_id}};
+                break;
+            }
+            ok = true;
         }
     } catch (std::exception& ex) {
         LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
@@ -358,18 +428,21 @@ void App::user_register_handler(const httplib::Request& req, httplib::Response& 
     }
 
     res.set_content(response.dump(), "application/json");
+    return ok;
 }
 
-void App::user_get_id_handler(const httplib::Request& req, httplib::Response& res)
+bool App::user_get_id_handler(const httplib::Request& req, httplib::Response& res)
 {
     if (!req.path_params.contains("id")) {
+        LOG_ERROR(std::format("user_get_id_handler: request params does not contain 'id'"));
         res.status = httplib::StatusCode::BadRequest_400;
-        return;
+        return false;
     }
 
     if (!is_valid_uuid_(req.path_params.at("id"))) {
+        LOG_ERROR(std::format("user_get_id_handler: request param 'id' is not an UUID format"));
         res.status = httplib::StatusCode::BadRequest_400;
-        return;
+        return false;
     }
 
     static const std::string query =
@@ -377,6 +450,7 @@ void App::user_get_id_handler(const httplib::Request& req, httplib::Response& re
         "  FROM users "
         " WHERE id = $1";
 
+    bool ok = false;
     nlohmann::json response{};
     try {
         const std::string id{req.path_params.at("id")};
@@ -387,19 +461,19 @@ void App::user_get_id_handler(const httplib::Request& req, httplib::Response& re
         if (result.empty()) {
             // анкета не найдена
             res.status = httplib::StatusCode::NotFound_404;
-            return;
-        }
-
-        for (const auto& row : result) {
-            const auto& [row_fname, row_sname, row_bdate, row_bio, row_city] = row.as<std::string, std::string, std::string, std::string, std::string>();
-            // успешное получение анкеты пользователя
-            response = {{"id", id},
-                        {"first_name", row_fname},
-                        {"second_name", row_sname},
-                        {"birthdate", row_bdate},
-                        {"biography", row_bio},
-                        {"city", row_city}};
-            break;
+        } else {
+            for (const auto& row : result) {
+                const auto& [row_fname, row_sname, row_bdate, row_bio, row_city] = row.as<std::string, std::string, std::string, std::string, std::string>();
+                // успешное получение анкеты пользователя
+                response = {{"id", id},
+                            {"first_name", row_fname},
+                            {"second_name", row_sname},
+                            {"birthdate", row_bdate},
+                            {"biography", row_bio},
+                            {"city", row_city}};
+                break;
+            }
+            ok = true;
         }
     } catch (std::exception& ex) {
         LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
@@ -409,6 +483,55 @@ void App::user_get_id_handler(const httplib::Request& req, httplib::Response& re
     }
 
     res.set_content(response.dump(), "application/json");
+    return ok;
+}
+
+bool App::user_search_handler(const httplib::Request& req, httplib::Response& res)
+{
+    if (!req.has_param("first_name")
+    ||  !req.has_param("last_name")) {
+        LOG_ERROR(std::format("user_get_id_handler: request params does not contain 'first_name' and/or 'last_name'"));
+        res.status = httplib::StatusCode::BadRequest_400;
+        return false;
+    }
+
+    static const std::string query =
+        "SELECT id, first_name, second_name, birthdate, biography, city "
+        "  FROM users "
+        " WHERE first_name LIKE $1 AND second_name LIKE $2 "
+        " ORDER BY id "
+        " LIMIT 100";
+
+    bool ok = false;
+    nlohmann::json response{};
+    try {
+        const std::string first_name{req.get_param_value("first_name") + "%"};
+        const std::string second_name{req.get_param_value("last_name") + "%"};
+
+        ScopedConnection scoped_conn(db_pool_);
+        pqxx::work tx(*scoped_conn.conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{first_name, second_name});
+
+        for (const auto& row : result) {
+            const auto& [row_id, row_fname, row_sname, row_bdate, row_bio, row_city] = row.as<std::string, std::string, std::string, std::string, std::string, std::string>();
+            // собираем массив
+            response.push_back({{"id", row_id},
+                                {"first_name", row_fname},
+                                {"second_name", row_sname},
+                                {"birthdate", row_bdate},
+                                {"biography", row_bio},
+                                {"city", row_city}});
+        }
+        ok = true;
+    } catch (std::exception& ex) {
+        LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
+
+        response = {{"code", 500}, {"message", std::format("Error SQL: {}", ex.what())}};
+        res.status = httplib::StatusCode::InternalServerError_500;
+    }
+
+    res.set_content(response.dump(), "application/json");
+    return ok;
 }
 
 void App::liveness_handler(const httplib::Request& /*req*/, httplib::Response& res)
@@ -518,9 +641,79 @@ void App::db_create_users_table()
         "  city        VARCHAR(50)"
         ")";
 
+    LOG_DEBUG(std::format("table 'users', trying to create table if not exists"));
+
     try {
         ScopedConnection scoped_conn(db_pool_);
         pqxx::work tx(*scoped_conn.conn.get());
+        tx.exec(query).no_rows();
+        tx.commit();
+    }
+    catch (std::exception& ex) {
+        LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
+    }
+}
+
+void App::db_create_index_users_names_search()
+{
+    // можно использовать GIN + trigram для полнотекстовых поисков
+    // (включая LIKE '%ан%'), при этом надо включить расширение.
+    // однако GIN работает медленнее B-tree и занимает больше места,
+    // хотя и позволяет не только префиксный поиск, но и с любыми
+    // LIKE-запросами (префикс, суффикс, вхождение подстроки).
+    // XXX: почему то просто так планировщик не захотел использовать
+    //      именно этот индекс. вместо него предпочел Parallel Seq Scan
+    //      для запросов (first_name LIKE '%ва%' AND second_name LIKE '%ан%').
+    //      вероятно дело в отсутствии статистики у планировщика, или просто
+    //      очень низкая селективность и планировщик отбросил этот индекс.
+    // static const std::string query0 =
+    //     "CREATE EXTENSION IF NOT EXISTS pg_trgm";
+    // static const std::string query1 =
+    //     "CREATE INDEX IF NOT EXISTS users_names_gin_idx "
+    //     "ON users USING GIN(first_name gin_trgm_ops, second_name gin_trgm_ops)";
+
+    // для B-tree надо использовать text_pattern_ops, т.к. по умолчанию он
+    // не поддерживает поиск по префиксу (LIKE 'Ив%') для типов text/varchar.
+    // а для поисков по суффиксу и вхождения подстроки - не подходит вообще!
+    static const std::string query2 =
+        "CREATE INDEX IF NOT EXISTS users_names_btree_idx "
+        "ON users(first_name text_pattern_ops, second_name text_pattern_ops)";
+
+    LOG_DEBUG(std::format("table 'users', trying to create index: users_names_btree_idx"));
+
+    std::string query{};
+    try {
+        ScopedConnection scoped_conn(db_pool_);
+        pqxx::work tx(*scoped_conn.conn.get());
+        // query = query0;
+        // tx.exec(query).no_rows();
+        // query = query1;
+        // tx.exec(query).no_rows();
+        query = query2;
+        tx.exec(query).no_rows();
+        tx.commit();
+    }
+    catch (std::exception& ex) {
+        LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
+    }
+}
+
+void App::db_drop_index_users_names_search()
+{
+    // static const std::string query1 =
+    //     "DROP INDEX IF EXISTS users_names_gin_idx";
+    static const std::string query2 =
+        "DROP INDEX IF EXISTS users_names_btree_idx";
+
+    LOG_DEBUG(std::format("table 'users', trying to drop index: users_names_btree_idx"));
+
+    std::string query{};
+    try {
+        ScopedConnection scoped_conn(db_pool_);
+        pqxx::work tx(*scoped_conn.conn.get());
+        // query = query1;
+        // tx.exec(query).no_rows();
+        query = query2;
         tx.exec(query).no_rows();
         tx.commit();
     }

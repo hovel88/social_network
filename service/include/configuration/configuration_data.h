@@ -28,6 +28,10 @@ namespace config_def {
     extern const int         http_threads_count;
     extern const int         http_queue_capacity;
 
+    extern const std::string prometheus_listening;
+    extern const std::string prometheus_host;
+    extern const uint16_t    prometheus_port;
+
     extern const std::unordered_map<std::string, std::string> logging_config;
 
 } // namespace config_def
@@ -49,6 +53,9 @@ namespace config_data {
         std::string http_listening;
         int         http_threads_count;
         int         http_queue_capacity;
+
+        std::string prometheus_listening;
+        int         prometheus_port;
 
         std::unordered_map<std::string, std::string> logging_config;
 

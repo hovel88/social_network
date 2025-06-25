@@ -25,6 +25,10 @@ const int config_max::http_queue_capacity = 4096;
 const int config_def::http_queue_capacity = 1024;
 const int config_min::http_queue_capacity = 1;
 
+const std::string config_def::prometheus_listening{"0.0.0.0:6001"};
+const std::string config_def::prometheus_host{"0.0.0.0"};
+const uint16_t    config_def::prometheus_port = 6001;
+
 const std::unordered_map<std::string, std::string> config_def::logging_config = { {"type", "stdout"}, {"color", "true"}, {"level", "1"} };
 
 
@@ -45,6 +49,8 @@ void config_data::config_s::clear()
     http_listening      = config_def::http_listening;
     http_threads_count  = config_def::http_threads_count;
     http_queue_capacity = config_def::http_queue_capacity;
+
+    prometheus_listening = config_def::prometheus_listening;
 
     logging_config = config_def::logging_config;
 }
@@ -139,6 +145,23 @@ std::list<std::string> config_data::config_s::validate()
         errors.push_back(std::format("validation error 'http.queue_capacity={}': should be in range [{}..{}]",
             http_queue_capacity, config_min::http_queue_capacity, config_max::http_queue_capacity));
         http_queue_capacity = config_def::http_queue_capacity;
+    }
+
+    try {
+        prometheus_listening = std::format("{}:{}", config_def::prometheus_host, prometheus_port);
+        NetHelpers::SocketAddress sock_addr(prometheus_listening);
+        if (sock_addr.port() == 0) {
+            prometheus_listening = std::format("{}:{}", config_def::prometheus_host, config_def::prometheus_port);
+        }
+    }
+    catch (NetHelpers::DnsException& ex) {
+        errors.push_back(std::format("validation error 'prometheus.listening={}': {}",
+            prometheus_listening, ex.what()));
+    }
+    catch (std::exception& ex) {
+        errors.push_back(std::format("validation error 'prometheus.listening={}': {}",
+            prometheus_listening, ex.what()));
+        prometheus_listening.assign(config_def::prometheus_listening);
     }
 
     return errors;
