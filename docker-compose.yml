@@ -1,3 +1,7 @@
+volumes:
+  prometheus-data:
+  grafana-storage:
+
 networks:
   net:
     driver: bridge
@@ -21,10 +25,13 @@ services:
       - HTTP_LISTENING=0.0.0.0:6000
       - HTTP_QUEUE_CAPACITY=${ENV_HTTP_QUEUE_CAPACITY}
       - HTTP_THREADS_COUNT=${ENV_HTTP_THREADS_COUNT}
+      - PROMETHEUS_PORT=6001
     networks:
       - net
     ports:
       - ${ENV_HTTP_EXTERNAL_PORT}:6000
+      - ${ENV_PROMETHEUS_EXTERNAL_PORT}:6001   # для метрик Prometheus
+    # command: "-I names_search -i names_search"
 
 
   postgres_db:
@@ -45,4 +52,65 @@ services:
       - net
     ports:
       - ${ENV_POSTGRES_EXTERNAL_PORT}:5432
+
+
+  prometheus_srv:
+    image: prom/prometheus
+    container_name: "prometheus_srv"
+    hostname: "prometheus_srv"
+    restart: always
+    networks:
+      - net
+    ports:
+      - 9090:9090
+      # - 9091:9091 # Pushgateway
+      # - 9093:9093 # Alertmanager
+      # - 9094:9094 # Alertmanager clustering
+      # - 9100:9100 # Prometheus Exporters (9100-9563)
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+
+
+  grafana_srv:
+    image: grafana/grafana
+    container_name: "grafana_srv"
+    hostname: "grafana_srv"
+    restart: always
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor metricsSummary
+    depends_on:
+      - prometheus_srv
+    networks:
+      - net
+    ports:
+      - 3000:3000
+    volumes:
+      - ./monitoring/grafana_datasources.yml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./monitoring/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./monitoring/social_dashboard.json:/etc/grafana/provisioning/dashboards/social_dashboard.json
+      - grafana-storage:/var/lib/grafana
+
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter
+    container_name: "postgres_exporter"
+    hostname: "postgres_exporter"
+    restart: always
+    environment:
+      - DATA_SOURCE_URI=postgres_db:5432/postgres?sslmode=disable
+      - DATA_SOURCE_USER=postgres
+      - DATA_SOURCE_PASS=${ENV_POSTGRES_PASSWORD}
+    depends_on:
+      prometheus_srv:
+        condition: service_started
+      postgres_db:
+        condition: service_healthy
+    networks:
+      - net
+    ports:
+      - 9187:9187
 

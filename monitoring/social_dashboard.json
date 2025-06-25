@@ -1,0 +1,111 @@
+{
+  "title": "Social Network Performance",
+  "description": "Monitoring key metrics",
+  "tags": ["social-service", "performance"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "templating": {
+    "list": [{
+      "name": "instance",
+      "label": "Instance",
+      "query": "label_values(http_requests_total, instance)"
+    }]
+  },
+
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP Requests by Endpoint",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus_srv"
+      },
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "sum(rate(http_requests_total[1m])) by (endpoint)",
+        "legendFormat": "{{endpoint}}"
+      }],
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {"mode": "palette-classic"}
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Failed HTTP Requests by Endpoint",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus_srv"
+      },
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "sum(rate(http_requests_failed_total[1m])) by (endpoint)",
+        "legendFormat": "{{endpoint}}"
+      }],
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {"mode": "palette-classic"}
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Request Latency (p99)",
+      "type": "graph",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus_srv"
+      },
+      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[1m]))",
+        "legendFormat": "{{endpoint}}"
+      }],
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "decimals": 3
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Request Latency (p95)",
+      "type": "graph",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus_srv"
+      },
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[1m]))",
+        "legendFormat": "{{endpoint}}"
+      }],
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "decimals": 3
+        }
+      }
+    }
+  ]
+}
