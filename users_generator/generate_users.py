@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import csv
-import uuid
 from faker import Faker
 
 FILE_INTERESTS_RAW = "interests_raw.csv"
@@ -43,11 +42,15 @@ interests = read_lines_from_file(FILE_INTERESTS_RAW)
 cities    = read_lines_from_file(FILE_CITIES_RAW)
 people    = split_people_names(read_lines_from_file(FILE_PEOPLE_RAW))
 
-fake = Faker('ru_RU')
+fake     = Faker('ru_RU')
+# Пароль "secret123" в формате bcrypt для всех пользователей
+pwd_hash = '$2a$12$XH4BS2zgGgpJs4hiu9p17OwxHxoWto21DLHkzo6JQH67U/3wi.LEW'
 
 with open('users.csv', 'w', newline='') as csvfile:
-    writer = csv.writer(csvfile)
-    writer.writerow(['second_name', 'first_name', 'birthdate', 'biography', 'city', 'pwd_hash'])
+    fieldnames = ['second_name', 'first_name', 'birthdate', 'biography', 'city', 'pwd_hash']
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+    writer.writeheader()
 
     interests_max_cnt = len(interests)-1
     cities_max_cnt    = len(cities)-1
@@ -58,11 +61,11 @@ with open('users.csv', 'w', newline='') as csvfile:
         rand_3 = fake.random_int(min=0, max=interests_max_cnt)
         interest = ', '.join([interests[rand_1], interests[rand_2], interests[rand_3]])
 
-        writer.writerow([
-            item[0], # second_name
-            item[1], # first_name
-            fake.date_of_birth(minimum_age=18, maximum_age=70).strftime('%Y-%m-%d'), # birthdate (в формате 2017-02-01)
-            interest, # biography
-            cities[fake.random_int(min=0, max=cities_max_cnt)], # city
-            '$2a$10$N9qo8uLOickgx2ZMRZoMy.MH1JmKu7R4l8P/.P9gY4l6qBQ.9QxTW'  # pwd_hash (в формате bcrypt от "password123")
-        ])
+        writer.writerow({
+            'second_name': item[0],
+            'first_name': item[1],
+            'birthdate': fake.date_of_birth(minimum_age=18, maximum_age=70).strftime('%Y-%m-%d'), # в формате 2017-02-01
+            'biography': interest,
+            'city': cities[fake.random_int(min=0, max=cities_max_cnt)],
+            'pwd_hash': pwd_hash
+        })

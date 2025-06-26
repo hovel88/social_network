@@ -402,7 +402,7 @@ bool App::user_register_handler(const httplib::Request& req, httplib::Response& 
         const std::string bdate{json["birthdate"].get<std::string>()};
         const std::string bio{json["biography"].get<std::string>()};
         const std::string city{json["city"].get<std::string>()};
-        std::string hashed_pwd = BCrypt::generateHash(pwd);
+        std::string hashed_pwd = BCrypt::generateHash(pwd, 12);
 
         ScopedConnection scoped_conn(db_pool_);
         pqxx::work tx(*scoped_conn.conn.get());
@@ -503,7 +503,7 @@ bool App::user_search_handler(const httplib::Request& req, httplib::Response& re
         " LIMIT 100";
 
     bool ok = false;
-    nlohmann::json response{};
+    nlohmann::json response = nlohmann::json::array({});
     try {
         const std::string first_name{req.get_param_value("first_name") + "%"};
         const std::string second_name{req.get_param_value("last_name") + "%"};

@@ -1,0 +1,137 @@
+{
+  "title": "Social Network K6 Load (User Search)",
+  "description": "Monitoring key metrics",
+  "tags": ["social-service", "k6", "load-testing"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "templating": {
+    "list": [{
+      "name": "test_type",
+      "label": "Test Type",
+      "query": "label_values(k6_http_reqs_total,test_type)",
+      "refresh": 1,
+      "multi": true,
+      "includeAll": true
+    }]
+  },
+
+  "panels": [
+    {
+      "id": 1,
+      "title": "Throughput (RPS)",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus_srv" },
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "rate(k6_http_reqs_total{test_type=~\"$test_type\"}[1m])",
+        "legendFormat": "{{test_type}} - Requests"
+      }],
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {"mode": "palette-classic"}
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Search Latency (ms)",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus_srv" },
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "avg(k6_search_latency_ms_avg{test_type=~\"$test_type\"})",
+          "legendFormat": "{{test_type}} - Avg",
+          "refId": "A"
+        },
+        {
+          "expr": "max(k6_search_latency_ms_max{test_type=~\"$test_type\"})",
+          "legendFormat": "{{test_type}} - Max",
+          "refId": "B"
+        },
+        {
+          "expr": "quantile(0.95, k6_search_latency_ms_avg{test_type=~\"$test_type\"})",
+          "legendFormat": "{{test_type}} - p95",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {"mode": "palette-classic"}
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Success Rate",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus_srv" },
+      "gridPos": {"x": 0, "y": 8, "w": 6, "h": 4},
+      "targets": [
+        {
+          "expr": "avg(k6_search_success_rate{test_type=~\"$test_type\"})",
+          "format": "percentunit",
+          "legendFormat": "{{test_type}}"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Error Count",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus_srv" },
+      "gridPos": {"x": 6, "y": 8, "w": 6, "h": 4},
+      "targets": [
+        {
+          "expr": "sum(k6_search_errors_total{test_type=~\"$test_type\"})",
+          "legendFormat": "{{test_type}} - Errors"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": null, "color": "green"},
+              {"value": 10, "color": "red"}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Duration",
+      "type": "barchart",
+      "datasource": { "type": "prometheus", "uid": "prometheus_srv" },
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 4},
+      "targets": [
+        {
+          "expr": "avg(k6_search_duration_ms{test_type=~\"$test_type\"})",
+          "legendFormat": "{{test_type}} - Duration"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {"mode": "palette-classic"}
+        }
+      }
+    }
+  ]
+}

@@ -68,8 +68,12 @@ services:
       # - 9094:9094 # Alertmanager clustering
       # - 9100:9100 # Prometheus Exporters (9100-9563)
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-remote-write-receiver' # Enables remote write endpoint for k6
 
 
   grafana_srv:
@@ -89,9 +93,10 @@ services:
     ports:
       - 3000:3000
     volumes:
-      - ./monitoring/grafana_datasources.yml:/etc/grafana/provisioning/datasources/datasources.yaml
-      - ./monitoring/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
-      - ./monitoring/social_dashboard.json:/etc/grafana/provisioning/dashboards/social_dashboard.json
+      - ./monitoring/grafana/datasources/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./monitoring/grafana/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./monitoring/grafana/dashboards/social.json:/etc/grafana/provisioning/dashboards/social.json
+      - ./monitoring/grafana/dashboards/k6_user_search.json:/etc/grafana/provisioning/dashboards/k6_user_search.json
       - grafana-storage:/var/lib/grafana
 
 
@@ -114,3 +119,27 @@ services:
     ports:
       - 9187:9187
 
+
+  k6:
+    image: grafana/k6
+    container_name: "k6"
+    hostname: "k6"
+    restart: always
+    environment:
+      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus_srv:9090/api/v1/write
+      - K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM=true
+      # - K6_WEB_DASHBOARD=true
+      # - K6_WEB_DASHBOARD_PORT=6565
+      - TEST_HOST=http://social_srv:6000
+      - TEST_TYPE=no-index
+    depends_on:
+      - prometheus_srv
+      - social_srv
+    networks:
+      - net
+    ports:
+      - 6565:6565
+    volumes:
+      - ./k6_tests:/tests
+    # command: run --out experimental-prometheus-rw=http://prometheus_srv:9090/api/v1/write /tests/loadtest_search.js
+    command: run /tests/loadtest_search.js
