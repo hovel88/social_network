@@ -55,10 +55,10 @@ services:
 
 
   prometheus_srv:
-    image: prom/prometheus
+    image: prom/prometheus:v2.37.9
     container_name: "prometheus_srv"
     hostname: "prometheus_srv"
-    restart: always
+    # restart: always
     networks:
       - net
     ports:
@@ -73,6 +73,9 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--enable-feature=promql-experimental-functions'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-remote-write-receiver' # Enables remote write endpoint for k6
 
 
@@ -80,7 +83,7 @@ services:
     image: grafana/grafana
     container_name: "grafana_srv"
     hostname: "grafana_srv"
-    restart: always
+    # restart: always
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
@@ -96,7 +99,7 @@ services:
       - ./monitoring/grafana/datasources/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yaml
       - ./monitoring/grafana/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
       - ./monitoring/grafana/dashboards/social.json:/etc/grafana/provisioning/dashboards/social.json
-      - ./monitoring/grafana/dashboards/k6_user_search.json:/etc/grafana/provisioning/dashboards/k6_user_search.json
+      - ./monitoring/grafana/dashboards/k6_prometheus_19665.json:/etc/grafana/provisioning/dashboards/k6_prometheus_19665.json
       - grafana-storage:/var/lib/grafana
 
 
@@ -104,7 +107,7 @@ services:
     image: prometheuscommunity/postgres-exporter
     container_name: "postgres_exporter"
     hostname: "postgres_exporter"
-    restart: always
+    # restart: always
     environment:
       - DATA_SOURCE_URI=postgres_db:5432/postgres?sslmode=disable
       - DATA_SOURCE_USER=postgres
@@ -124,22 +127,16 @@ services:
     image: grafana/k6
     container_name: "k6"
     hostname: "k6"
-    restart: always
+    # restart: always
     environment:
       - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus_srv:9090/api/v1/write
-      - K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM=true
-      # - K6_WEB_DASHBOARD=true
-      # - K6_WEB_DASHBOARD_PORT=6565
+      - K6_PROMETHEUS_RW_TREND_STATS=p(95),p(99),min,max,count,sum
       - TEST_HOST=http://social_srv:6000
-      - TEST_TYPE=no-index
     depends_on:
       - prometheus_srv
       - social_srv
     networks:
       - net
-    ports:
-      - 6565:6565
     volumes:
       - ./k6_tests:/tests
-    # command: run --out experimental-prometheus-rw=http://prometheus_srv:9090/api/v1/write /tests/loadtest_search.js
-    command: run /tests/loadtest_search.js
+    # command: run --verbose --out experimental-prometheus-rw /tests/user_search.js
