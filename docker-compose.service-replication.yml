@@ -1,0 +1,80 @@
+networks:
+  net:
+    driver: bridge
+
+services:
+  social_srv:
+    image: ${ENV_SOCIAL_SERVICE_IMAGE}
+    build:
+      context: ./service/
+      dockerfile: Dockerfile
+    container_name: "social_srv"
+    hostname: "social_srv"
+    # restart: on-failure
+    depends_on:
+      postgres_m0:
+        condition: service_healthy
+    environment:
+      - PGSQL_MASTER_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_m0:5432/postgres
+      # - PGSQL_REPLICA_1_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_r1:5432/postgres
+      # - PGSQL_REPLICA_2_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_r2:5432/postgres
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=${ENV_HTTP_QUEUE_CAPACITY}
+      - HTTP_THREADS_COUNT=${ENV_HTTP_THREADS_COUNT}
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
+    ports:
+      - ${ENV_HTTP_EXTERNAL_PORT}:6000
+      - ${ENV_PROMETHEUS_EXTERNAL_PORT}:6001   # для метрик Prometheus
+    # command: "-I names_search -i names_search"
+
+
+  postgres_m0:
+    image: ${ENV_POSTGRES_DB_IMAGE}
+    container_name: "postgres_m0"
+    hostname: "postgres_m0"
+    environment:
+      - POSTGRES_USER=${ENV_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
+    volumes:
+      - ./replication/postgres_m0_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - net
+    ports:
+      - "15432:5432"
+
+
+  postgres_r1:
+    image: ${ENV_POSTGRES_DB_IMAGE}
+    container_name: "postgres_r1"
+    hostname: "postgres_r1"
+    environment:
+      - POSTGRES_USER=${ENV_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
+    volumes:
+      - ./replication/postgres_r1_data:/var/lib/postgresql/data
+    networks:
+      - net
+    ports:
+      - "25432:5432"
+
+
+  postgres_r2:
+    image: ${ENV_POSTGRES_DB_IMAGE}
+    container_name: "postgres_r2"
+    hostname: "postgres_r2"
+    environment:
+      - POSTGRES_USER=${ENV_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
+    volumes:
+      - ./replication/postgres_r2_data:/var/lib/postgresql/data
+    networks:
+      - net
+    ports:
+      - "35432:5432"

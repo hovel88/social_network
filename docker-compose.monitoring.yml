@@ -1,0 +1,81 @@
+volumes:
+  prometheus-storage:
+  grafana-storage:
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.37.9
+    container_name: "prometheus"
+    hostname: "prometheus"
+    restart: unless-stopped
+    networks:
+      - net
+    ports:
+      - 9090:9090
+      # - 9091:9091 # Pushgateway
+      # - 9093:9093 # Alertmanager
+      # - 9094:9094 # Alertmanager clustering
+      # - 9100:9100 # Prometheus Exporters (9100-9563)
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus
+      - prometheus-storage:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--enable-feature=promql-experimental-functions'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-remote-write-receiver' # Enables remote write endpoint for k6
+
+
+  grafana:
+    image: grafana/grafana
+    container_name: "grafana"
+    hostname: "grafana"
+    restart: unless-stopped
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor metricsSummary
+    depends_on:
+      - prometheus
+    networks:
+      - net
+    ports:
+      - 3000:3000
+    volumes:
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana-storage:/var/lib/grafana
+
+
+  node_exporter:
+    image: prom/node-exporter
+    container_name: "node_exporter"
+    hostname: "node_exporter"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - net
+    expose:
+      - 9100
+
+
+  cadvisor:
+    image: google/cadvisor
+    container_name: "cadvisor"
+    hostname: "cadvisor"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - net
+    expose:
+      - 8080
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro

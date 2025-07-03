@@ -17,7 +17,7 @@
       "id": 1,
       "title": "HTTP Requests by Endpoint",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "prometheus_srv" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
       "targets": [{
         "expr": "sum(rate(http_requests_total[1m])) by (endpoint)",
@@ -37,7 +37,7 @@
       "id": 2,
       "title": "Failed HTTP Requests by Endpoint",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "prometheus_srv" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
       "targets": [{
         "expr": "sum(rate(http_requests_failed_total[1m])) by (endpoint)",
@@ -55,12 +55,12 @@
     },
     {
       "id": 3,
-      "title": "Request Latency (p99)",
+      "title": "Request Latency (p90)",
       "type": "graph",
-      "datasource": { "type": "prometheus", "uid": "prometheus_srv" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
       "targets": [{
-        "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[1m]))",
+        "expr": "histogram_quantile(0.90, rate(http_request_duration_seconds_bucket[1m]))",
         "legendFormat": "{{endpoint}}"
       }],
       "options": {
@@ -76,12 +76,12 @@
     },
     {
       "id": 4,
-      "title": "Request Latency (p95)",
+      "title": "Request Latency (p98)",
       "type": "graph",
-      "datasource": { "type": "prometheus", "uid": "prometheus_srv" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
       "targets": [{
-        "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[1m]))",
+        "expr": "histogram_quantile(0.98, rate(http_request_duration_seconds_bucket[1m]))",
         "legendFormat": "{{endpoint}}"
       }],
       "options": {
@@ -92,6 +92,26 @@
           "unit": "s",
           "min": 0,
           "decimals": 3
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "HTTP total requests to specific host",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "sum(rate(http_requests_to_host_total[1m])) by (host)",
+        "legendFormat": "{{host}}"
+      }],
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {"mode": "palette-classic"}
         }
       }
     }

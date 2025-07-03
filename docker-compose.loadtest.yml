@@ -1,0 +1,18 @@
+services:
+  k6:
+    image: grafana/k6
+    container_name: "k6"
+    hostname: "k6"
+    # restart: always
+    environment:
+      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write
+      - K6_PROMETHEUS_RW_TREND_STATS=p(95),p(99),min,max,count,sum
+      - TEST_HOST=http://social_srv:6000
+    depends_on:
+      - prometheus
+      - social_srv
+    networks:
+      - net
+    volumes:
+      - ./k6_tests:/tests
+    # command: run --verbose --out experimental-prometheus-rw /tests/user_search.js

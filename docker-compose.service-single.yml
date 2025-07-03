@@ -1,0 +1,48 @@
+networks:
+  net:
+    driver: bridge
+
+services:
+  social_srv:
+    image: ${ENV_SOCIAL_SERVICE_IMAGE}
+    build:
+      context: ./service/
+      dockerfile: Dockerfile
+    container_name: "social_srv"
+    hostname: "social_srv"
+    # restart: on-failure
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    environment:
+      - PGSQL_MASTER_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_db:5432/postgres
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=${ENV_HTTP_QUEUE_CAPACITY}
+      - HTTP_THREADS_COUNT=${ENV_HTTP_THREADS_COUNT}
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
+    ports:
+      - ${ENV_HTTP_EXTERNAL_PORT}:6000
+      - ${ENV_PROMETHEUS_EXTERNAL_PORT}:6001   # для метрик Prometheus
+    # command: "-I names_search -i names_search"
+
+
+  postgres_db:
+    image: ${ENV_POSTGRES_DB_IMAGE}
+    container_name: "postgres_db"
+    hostname: "postgres_db"
+    # restart: on-failure
+    environment:
+      - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
+    volumes:
+      - ./postgres_db:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - net
+    ports:
+      - 15432:5432
