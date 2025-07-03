@@ -4,7 +4,7 @@
 
 ### Описание нагрузочного теста на чтение
 
-* в качестве нагрузки на чтение используется тест из файла `k6_tests/search_and_get.js`
+* в качестве нагрузки на чтение используется K6 тест из файла `k6_tests/search_and_get.js`
 
 * схема нагрузки:
   * в первую минуту - 50 клиент  
@@ -24,6 +24,15 @@
 
 ### Описание нагрузочного теста на запись
 
+* в качестве нагрузки на запись используется K6 тест из файла `k6_tests/user_register.js`
+
+* схема нагрузки:
+  * постоянная в течении 4 минут - 100 клиентов
+
+* выполняется нагрузка на запросы записи в эндпоинт `/user/register`
+  * имя пользователя формата **"User_${__VU}"**
+  * фамилия пользователя формата **"Last_${__ITER}"**
+  * остальные данные одинаковые
 
 ### Мониторинг результатов
 
@@ -177,11 +186,11 @@ SELECT application_name, sync_state FROM pg_stat_replication;"
   * изменить файл `./replication/postgres_m0_data/postgresql.conf`:
     * `synchronous_commit = on`
     * `synchronous_standby_names = 'FIRST 1 (postgres_r1, postgres_r2)'`
-  * перезагрузить конфиг конфиг
+  * перезагрузить конфиг
 
   ```bash
   docker exec -it postgres_m0 su - postgres -c psql
-  select pg_reload_conf();
+  SELECT pg_reload_conf();
   exit
   ```
 
@@ -334,8 +343,163 @@ default ✓ [======================================] 000/200 VUs  5m0s
 4. распределение выбора между репликами осуществляется по алгоритму Round Robin, этим объясняется одинаковость графиков для хостов **postgres_r1** и **postgres_r2**, т.к. запросы распределяются по ним равномерно
 5. результаты тестов K6 показывают несколько ошибок, а на графиках их нет, это связано с тем, что некоторое количество запросов "/user/search" выполняется долго и K6 отваливается по таймауту, списывая их в ошибку, но по метрикам в Prometheus видно, что запрос по итогу отрабатывает успешно
 
-
 ### Тест на запись в реплицированную базу
+
+* снова развернуть
+
+```bash
+docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml up -d
+# по окончании работы остановить систему командой
+docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml down --remove-orphans
+```
+
+* запустить тест
+
+```bash
+docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml run k6 run --verbose --out experimental-prometheus-rw /tests/user_register.js
+```
+
+* где-то через 2 минуты остановить реплику **postgres_r1**
+
+```bash
+docker compose -f docker-compose.service-replication.yml stop postgres_r1
+```
+
+* дождаться окончания нагрузки на запись
+  * результаты по тесту K6
+
+  ```text
+  DEBU[0270] Generating the end-of-test summary...        
+
+
+  █ TOTAL RESULTS 
+
+    HTTP
+    http_req_duration.......................................................: avg=4.76s min=189.85ms med=756.27ms max=29.26s p(90)=9.51s p(95)=9.56s
+      { expected_response:true }............................................: avg=4.76s min=189.85ms med=756.27ms max=29.26s p(90)=9.51s p(95)=9.56s
+    http_req_failed.........................................................: 0.00%  0 out of 4970
+    http_reqs...............................................................: 4970   18.407051/s
+
+    EXECUTION
+    iteration_duration......................................................: avg=4.77s min=189.96ms med=768.83ms max=29.26s p(90)=9.51s p(95)=9.56s
+    iterations..............................................................: 4970   18.407051/s
+    vus.....................................................................: 87     min=87        max=100
+    vus_max.................................................................: 100    min=100       max=100
+
+    NETWORK
+    data_received...........................................................: 1.7 MB 6.2 kB/s
+    data_sent...............................................................: 1.8 MB 6.5 kB/s
+
+
+
+
+  running (4m30.0s), 000/100 VUs, 4970 complete and 87 interrupted iterations
+  default ✓ [======================================] 100 VUs  4m0s
+  ```
+
+  * результаты по графикам в дашборде в Grafana
+  ![запись](misc/hw3_write.png)
+
+* проверить на мастере **postgres_m0** и на оставшейся реплике ****postgres_r2****, сколько данных мы записали.  
+убедиться, что количество совпадает (5057 == 5057), транзакции не потерялись
+
+```bash
+docker exec -it postgres_m0 psql -U postgres -c "
+SELECT count(*) FROM users
+WHERE first_name LIKE 'User_%' AND second_name LIKE 'Last_%';"
+
+ count 
+-------
+  5057
+(1 row)
+
+```bash
+docker exec -it postgres_r2 psql -U postgres -c "
+SELECT count(*) FROM users
+WHERE first_name LIKE 'User_%' AND second_name LIKE 'Last_%';"
+
+ count 
+-------
+  5057
+(1 row)
+```
+
+* остановить мастер **postgres_m0**
+
+```bash
+docker compose -f docker-compose.service-replication.yml stop postgres_m0
+```
+
+* снова запустить реплику **postgres_r1**
+
+```bash
+docker compose -f docker-compose.service-replication.yml start postgres_r1
+```
+
+* проверить на реплике **postgres_r1**, сколько данных мы записали.  
+убедиться, что количество отличается (2706 < 5057)
+
+```bash
+docker exec -it postgres_r1 psql -U postgres -c "
+SELECT count(*) FROM users
+WHERE first_name LIKE 'User_%' AND second_name LIKE 'Last_%';"
+
+ count 
+-------
+  2706
+(1 row)
+```
+
+* самый свежий слейв это реплика **postgres_r2**
+
+* перенастроить реплику **postgres_r2**, включаем синхронную кворумную репликацию.  
+  * отредактировать файл `replication/postgres_r2_data/postgresql.conf`:
+    * `synchronous_commit = on`
+    * `synchronous_standby_names = 'ANY 1 (postgres_m0, postgres_r1)'`
+
+  * перезагрузить конфиг
+
+  ```bash
+  docker exec -it postgres_r2 su - postgres -c psql
+  SELECT pg_reload_conf();
+  exit
+  ```
+
+* переключить отстающую реплику **postgres_r1** на новый мастер
+  * отредактировать файл `replication/postgres_r1_data/postgresql.conf`:
+    * `primary_conninfo = 'host=postgres_r2 port=5432 user=replicator password=rpass application_name=postgres_r1'`
+
+  * перезагрузить конфиг
+
+  ```bash
+  docker exec -it postgres_r1 su - postgres -c psql
+  SELECT pg_reload_conf();
+  exit
+  ```
+
+* промоутим реплику до мастера
+
+```bash
+docker exec -it postgres_r2 su postgres -c 'pg_ctl promote -D $PGDATA'
+waiting for server to promote.... done
+server promoted
+```
+
+* убедиться что **postgres_r1** подключился как реплика к **postgres_r2**
+
+```bash
+docker exec -it postgres_r2 psql -U postgres -c "
+SELECT application_name, sync_state FROM pg_stat_replication;"
+```
+
+* реплике **postgres_r1** потребуется немного времени для синхронизации, по окончании проверим наличие данных.  
+убедиться, что количество совпадает (транзакции не потеряны)
+
+```bash
+docker exec -it postgres_r1 psql -U postgres -c "
+SELECT count(*) FROM users
+WHERE first_name LIKE 'User_%' AND second_name LIKE 'Last_%';"
+```
 
 
 

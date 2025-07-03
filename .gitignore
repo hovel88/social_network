@@ -4,6 +4,9 @@ _extern/*
 !_extern/.gitkeep
 
 postgres_db
+replication/postgres_m0_data
+replication/postgres_r1_data
+replication/postgres_r2_data
 service/cmake-build
 
 *.o
