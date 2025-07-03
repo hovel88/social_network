@@ -17,16 +17,15 @@ std::shared_ptr<cxxopts::ParseResult> configure_cli_options(int argc, char** arg
         options.allow_unrecognised_options();
         options.set_width(80);
         options.add_options()
-        ("h,help",         "Display usage help and exit")
-        ("pgsql_endpoint", "Endpoint URL to PostgreSQL server", cxxopts::value<std::string>())
-        ("pgsql_login",    "Specify client login to authorize on PostgreSQL server", cxxopts::value<std::string>())
-        ("pgsql_password", "Specify client password to authorize on PostgreSQL server", cxxopts::value<std::string>())
-        ("http_listening", "Address and port (ip:port) HTTP server starts listening on", cxxopts::value<std::string>())
-        ("http_queue",     "Max available requests queue capacity for HTTP server", cxxopts::value<int>())
-        ("http_threads",   "Max available threads count to handle HTTP requests", cxxopts::value<int>())
-        ("prometheus_port","Port Prometheus server starts listening on", cxxopts::value<int>())
-        ("i,index_add",  "Add indexes into DB (names_search) ", cxxopts::value<std::vector<std::string>>())
-        ("I,index_drop", "Drop indexes into DB (names_search) ", cxxopts::value<std::vector<std::string>>())
+        ("h,help",              "Display usage help and exit")
+        ("pgsql_master_url",    "Endpoint URL (with login:password to authorize) to PostgreSQL master server", cxxopts::value<std::string>())
+        ("pgsql_replica_url",   "Endpoint URL (with login:password to authorize) to PostgreSQL replica server", cxxopts::value<std::vector<std::string>>())
+        ("http_listening",      "Address and port (ip:port) HTTP server starts listening on", cxxopts::value<std::string>())
+        ("http_queue",          "Max available requests queue capacity for HTTP server", cxxopts::value<int>())
+        ("http_threads",        "Max available threads count to handle HTTP requests", cxxopts::value<int>())
+        ("prometheus_port",     "Port Prometheus server starts listening on", cxxopts::value<int>())
+        ("i,index_add",         "Add indexes into DB (names_search) ", cxxopts::value<std::vector<std::string>>())
+        ("I,index_drop",        "Drop indexes into DB (names_search) ", cxxopts::value<std::vector<std::string>>())
         ;
 
         auto result = options.parse(argc, argv);
@@ -67,11 +66,19 @@ void Configuration::show_configuration() const
 {
     std::stringstream ss;
     ss << "configuration:";
-    ss << "\n  pgsql.endpoint="         << std::quoted(current_configuration_.pgsql_endpoint);
-    // ss << "\n  pgsql.login="            << std::string(current_configuration_.pgsql_login.size(), '*');
-    // ss << "\n  pgsql.password="         << std::string(current_configuration_.pgsql_password.size(), '*');
-    ss << "\n  pgsql.login="            << current_configuration_.pgsql_login;
-    ss << "\n  pgsql.password="         << current_configuration_.pgsql_password;
+    ss << "\n  pgsql_master.url="       << std::quoted(current_configuration_.pgsql_master.url);
+    // ss << "\n  pgsql_master.login="            << std::string(current_configuration_.pgsql_master.login.size(), '*');
+    // ss << "\n  pgsql_master.password="         << std::string(current_configuration_.pgsql_master.password.size(), '*');
+    ss << "\n  pgsql_master.login="     << current_configuration_.pgsql_master.login;
+    ss << "\n  pgsql_master.password="  << current_configuration_.pgsql_master.password;
+for (int i = 0; const auto& replica : current_configuration_.pgsql_replica) {
+    ss << "\n  pgsql_replica." << i << ".url="       << std::quoted(replica.url);
+    // ss << "\n  pgsql_replica." << i << ".login="            << std::string(replica.login.size(), '*');
+    // ss << "\n  pgsql_replica." << i << ".password="         << std::string(replica.password.size(), '*');
+    ss << "\n  pgsql_replica." << i << ".login="     << replica.login;
+    ss << "\n  pgsql_replica." << i << ".password="  << replica.password;
+    ++i;
+}
     ss << "\n  http.listening="         << std::quoted(current_configuration_.http_listening);
     ss << "\n  http.threads_count="     << current_configuration_.http_threads_count;
     ss << "\n  http.queue_capacity="    << current_configuration_.http_queue_capacity;
@@ -87,29 +94,61 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
     LOG_INFOR(std::format("trying to read configuration from environment"));
 
     {
-        const std::string key("PGSQL_ENDPOINT");
+        const std::string key("PGSQL_MASTER_URL");
         if (EnvironmentHelpers::has(key)) {
             auto env = EnvironmentHelpers::get(key);
             auto val = StringHelpers::trim(env.value());
-            current_configuration_.pgsql_endpoint = val;
+            current_configuration_.pgsql_master.url = val;
             LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }
     {
-        const std::string key("PGSQL_LOGIN");
+        const std::string key("PGSQL_REPLICA_1_URL");
         if (EnvironmentHelpers::has(key)) {
             auto env = EnvironmentHelpers::get(key);
             auto val = StringHelpers::trim(env.value());
-            current_configuration_.pgsql_login = val;
+            current_configuration_.pgsql_replica.push_back({});
+            current_configuration_.pgsql_replica.back().url = val;
             LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }
     {
-        const std::string key("PGSQL_PASSWORD");
+        const std::string key("PGSQL_REPLICA_2_URL");
         if (EnvironmentHelpers::has(key)) {
             auto env = EnvironmentHelpers::get(key);
             auto val = StringHelpers::trim(env.value());
-            current_configuration_.pgsql_password = val;
+            current_configuration_.pgsql_replica.push_back({});
+            current_configuration_.pgsql_replica.back().url = val;
+            LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+        }
+    }
+    {
+        const std::string key("PGSQL_REPLICA_3_URL");
+        if (EnvironmentHelpers::has(key)) {
+            auto env = EnvironmentHelpers::get(key);
+            auto val = StringHelpers::trim(env.value());
+            current_configuration_.pgsql_replica.push_back({});
+            current_configuration_.pgsql_replica.back().url = val;
+            LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+        }
+    }
+    {
+        const std::string key("PGSQL_REPLICA_4_URL");
+        if (EnvironmentHelpers::has(key)) {
+            auto env = EnvironmentHelpers::get(key);
+            auto val = StringHelpers::trim(env.value());
+            current_configuration_.pgsql_replica.push_back({});
+            current_configuration_.pgsql_replica.back().url = val;
+            LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+        }
+    }
+    {
+        const std::string key("PGSQL_REPLICA_5_URL");
+        if (EnvironmentHelpers::has(key)) {
+            auto env = EnvironmentHelpers::get(key);
+            auto val = StringHelpers::trim(env.value());
+            current_configuration_.pgsql_replica.push_back({});
+            current_configuration_.pgsql_replica.back().url = val;
             LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }
@@ -165,30 +204,23 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
     const auto& cli = *cli_opts;
 
     try {
-        const std::string key("pgsql_endpoint");
+        const std::string key("pgsql_master_url");
         if (cli.count(key)) {
             auto val = cli[key].as<std::string>();
-            current_configuration_.pgsql_endpoint = val;
+            current_configuration_.pgsql_master.url = val;
             LOG_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
         }
     }
     catch (...) {}
 
     try {
-        const std::string key("pgsql_login");
+        const std::string key("pgsql_replica_url");
         if (cli.count(key)) {
-            auto val = cli[key].as<std::string>();
-            current_configuration_.pgsql_login = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
-        }
-    }
-    catch (...) {}
-
-    try {
-        const std::string key("pgsql_password");
-        if (cli.count(key)) {
-            auto val = cli[key].as<std::string>();
-            current_configuration_.pgsql_password = val;
+            auto val = cli[key].as<std::vector<std::string>>();
+            for (const auto& v : val) {
+                current_configuration_.pgsql_replica.push_back({});
+                current_configuration_.pgsql_replica.back().url = v;
+            }
             LOG_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
         }
     }

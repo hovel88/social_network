@@ -8,7 +8,7 @@
 
 namespace SocialNetwork {
 
-const std::string config_def::pgsql_endpoint{"postgresql://localhost:5432/postgres"};
+const std::string config_def::pgsql_url{"postgresql://localhost:5432/postgres"};
 const std::string config_def::pgsql_database{"postgres"};
 const std::string config_def::pgsql_login{"postgres"};
 const std::string config_def::pgsql_password{""};
@@ -42,15 +42,18 @@ void config_data::config_s::init()
 
 void config_data::config_s::clear()
 {
-    pgsql_endpoint      = config_def::pgsql_endpoint;
-    pgsql_login.clear();
-    pgsql_password.clear();
+    pgsql_master.url = config_def::pgsql_url;
+    pgsql_master.login.clear();
+    pgsql_master.password.clear();
+
+    pgsql_replica.clear();
 
     http_listening      = config_def::http_listening;
     http_threads_count  = config_def::http_threads_count;
     http_queue_capacity = config_def::http_queue_capacity;
 
     prometheus_listening = config_def::prometheus_listening;
+    prometheus_port      = config_def::prometheus_port;
 
     logging_config = config_def::logging_config;
 }
@@ -60,11 +63,11 @@ std::list<std::string> config_data::config_s::validate()
     std::list<std::string> errors{};
 
     try {
-        if (pgsql_endpoint.find("://") == std::string::npos) {
-            auto endpoint_with_scheme = std::format("postgresql://{}", pgsql_endpoint);
-            pgsql_endpoint.swap(endpoint_with_scheme);
+        if (pgsql_master.url.find("://") == std::string::npos) {
+            auto endpoint_with_scheme = std::format("postgresql://{}", pgsql_master.url);
+            pgsql_master.url.swap(endpoint_with_scheme);
         }
-        UrlHelpers::Url url(pgsql_endpoint);
+        UrlHelpers::Url url(pgsql_master.url);
 
         // верификация схемы URL
         std::string scheme = url.get_scheme();
@@ -95,27 +98,87 @@ std::list<std::string> config_data::config_s::validate()
                 login = userinfo;
             }
         }
-        if (pgsql_login.empty()) {
-            pgsql_login = !login.empty() ? login : config_def::pgsql_login;
+        if (pgsql_master.login.empty()) {
+            pgsql_master.login = !login.empty() ? login : config_def::pgsql_login;
         }
-        if (pgsql_password.empty()) {
-            pgsql_password = !password.empty() ? password : config_def::pgsql_password;
+        if (pgsql_master.password.empty()) {
+            pgsql_master.password = !password.empty() ? password : config_def::pgsql_password;
         }
         url.set_user_info("");
-        pgsql_endpoint = url.to_string();
+        pgsql_master.url = url.to_string();
     }
     catch (NetHelpers::DnsException& ex) {
         errors.push_back(std::format("validation error 'pgsql.endpoint={}': {}",
-            pgsql_endpoint, ex.what()));
+            pgsql_master.url, ex.what()));
     }
     catch (std::exception& ex) {
         errors.push_back(std::format("validation error 'pgsql.endpoint={}': {}",
-            pgsql_endpoint, ex.what()));
-        pgsql_endpoint = config_def::pgsql_endpoint;
+            pgsql_master.url, ex.what()));
+        pgsql_master.url = config_def::pgsql_url;
     }
 
-    if (pgsql_login.empty())    pgsql_login    = config_def::pgsql_login;
-    if (pgsql_password.empty()) pgsql_password = config_def::pgsql_password;
+    if (pgsql_master.login.empty())    pgsql_master.login    = config_def::pgsql_login;
+    if (pgsql_master.password.empty()) pgsql_master.password = config_def::pgsql_password;
+
+    for (auto& replica : pgsql_replica) {
+        try {
+            if (replica.url.find("://") == std::string::npos) {
+                auto endpoint_with_scheme = std::format("postgresql://{}", replica.url);
+                replica.url.swap(endpoint_with_scheme);
+            }
+            UrlHelpers::Url url(replica.url);
+
+            // верификация схемы URL
+            std::string scheme = url.get_scheme();
+            if (!scheme.empty() && scheme != "postgresql")
+                throw std::runtime_error(std::format("scheme should be 'postgresql'"));
+
+            // верификация номера порта
+            NetHelpers::SocketAddress sock_addr(std::format("{}:{}", url.get_host(), url.get_specified_port()));
+            if (sock_addr.port() == 0) url.set_port(config_def::pgsql_port);
+
+            // верификация сегментов пути URL
+            std::vector<std::string> segments;
+            url.set_fragment("");
+            url.get_path_segments(segments);
+            if (segments.empty()) url.set_path(config_def::pgsql_database);
+
+            // верификация "login:password" части URL
+            // переупаковываем URL, убирая "чувствительную" часть
+            std::string login;
+            std::string password;
+            std::string userinfo = url.get_user_info(); // "login:password"
+            if (!userinfo.empty()) {
+                auto colon = userinfo.find(':');
+                if (colon != std::string::npos) {
+                    login    = userinfo.substr(0, colon);
+                    password = userinfo.substr(colon+1);
+                } else {
+                    login = userinfo;
+                }
+            }
+            if (replica.login.empty()) {
+                replica.login = !login.empty() ? login : config_def::pgsql_login;
+            }
+            if (replica.password.empty()) {
+                replica.password = !password.empty() ? password : config_def::pgsql_password;
+            }
+            url.set_user_info("");
+            replica.url = url.to_string();
+        }
+        catch (NetHelpers::DnsException& ex) {
+            errors.push_back(std::format("validation error 'pgsql.endpoint={}': {}",
+                replica.url, ex.what()));
+        }
+        catch (std::exception& ex) {
+            errors.push_back(std::format("validation error 'pgsql.endpoint={}': {}",
+                replica.url, ex.what()));
+            replica.url = config_def::pgsql_url;
+        }
+
+        if (replica.login.empty())    replica.login    = config_def::pgsql_login;
+        if (replica.password.empty()) replica.password = config_def::pgsql_password;
+    }
 
     try {
         NetHelpers::SocketAddress sock_addr(http_listening);

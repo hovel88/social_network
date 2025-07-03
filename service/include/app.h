@@ -1,86 +1,12 @@
 #pragma once
 
-#include <queue>
-#include <mutex>
-#include <pqxx/pqxx>
 #include <httplib.h>
-#include <prometheus/counter.h>
-#include <prometheus/histogram.h>
-#include <prometheus/exposer.h>
-#include <prometheus/registry.h>
-#include "logger/logger.h"
+#include "app_connection_pool.h"
+#include "app_metrics.h"
 #include "configuration/configuration.h"
 #include "helpers/thread_pool.h"
 
 namespace SocialNetwork {
-
-class Metrics {
-public:
-    Metrics()
-    :   latency_buckets_{0.05, 0.1, 0.5, 1.0, 2.0, 5.0},
-        registry_(std::make_shared<prometheus::Registry>()) {
-
-        auto& total_c = prometheus::BuildCounter()
-            .Name("http_requests_total")
-            .Help("HTTP total requests counter")
-            .Register(*registry_);
-        total_requests_login_         = &total_c.Add({{"endpoint", "/login"}});
-        total_requests_user_register_ = &total_c.Add({{"endpoint", "/user/register"}});
-        total_requests_user_get_id_   = &total_c.Add({{"endpoint", "/user/get/:id"}});
-        total_requests_user_search_   = &total_c.Add({{"endpoint", "/user/search"}});
-
-        auto& failed_c = prometheus::BuildCounter()
-            .Name("http_requests_failed_total")
-            .Help("HTTP failed requests counter")
-            .Register(*registry_);
-        failed_requests_login_         = &failed_c.Add({{"endpoint", "/login"}});
-        failed_requests_user_register_ = &failed_c.Add({{"endpoint", "/user/register"}});
-        failed_requests_user_get_id_   = &failed_c.Add({{"endpoint", "/user/get/:id"}});
-        failed_requests_user_search_   = &failed_c.Add({{"endpoint", "/user/search"}});
-
-        auto& latency_h = prometheus::BuildHistogram()
-            .Name("http_request_duration_seconds")
-            .Help("HTTP request latency")
-            .Register(*registry_);
-        latency_requests_login_         = &latency_h.Add({{"endpoint", "/login"}}, latency_buckets_);
-        latency_requests_user_register_ = &latency_h.Add({{"endpoint", "/user/register"}}, latency_buckets_);
-        latency_requests_user_get_id_   = &latency_h.Add({{"endpoint", "/user/get/:id"}}, latency_buckets_);
-        latency_requests_user_search_   = &latency_h.Add({{"endpoint", "/user/search"}}, latency_buckets_);
-    }
-
-    std::shared_ptr<prometheus::Registry> registry() const { return registry_; }
-
-    void count_request_login()         { total_requests_login_->Increment(); }
-    void count_request_user_register() { total_requests_user_register_->Increment(); }
-    void count_request_user_get_id()   { total_requests_user_get_id_->Increment(); }
-    void count_request_user_search()   { total_requests_user_search_->Increment(); }
-
-    void count_failed_request_login()         { failed_requests_login_->Increment(); }
-    void count_failed_request_user_register() { failed_requests_user_register_->Increment(); }
-    void count_failed_request_user_get_id()   { failed_requests_user_get_id_->Increment(); }
-    void count_failed_request_user_search()   { failed_requests_user_search_->Increment(); }
-
-    void store_latency_request_login(double seconds)         { latency_requests_login_->Observe(seconds); }
-    void store_latency_request_user_register(double seconds) { latency_requests_user_register_->Observe(seconds); }
-    void store_latency_request_user_get_id(double seconds)   { latency_requests_user_get_id_->Observe(seconds); }
-    void store_latency_request_user_search(double seconds)   { latency_requests_user_search_->Observe(seconds); }
-
-private:
-    const std::vector<double>             latency_buckets_{};
-    std::shared_ptr<prometheus::Registry> registry_{nullptr};
-    prometheus::Counter*                  total_requests_login_{nullptr};
-    prometheus::Counter*                  total_requests_user_register_{nullptr};
-    prometheus::Counter*                  total_requests_user_get_id_{nullptr};
-    prometheus::Counter*                  total_requests_user_search_{nullptr};
-    prometheus::Counter*                  failed_requests_login_{nullptr};
-    prometheus::Counter*                  failed_requests_user_register_{nullptr};
-    prometheus::Counter*                  failed_requests_user_get_id_{nullptr};
-    prometheus::Counter*                  failed_requests_user_search_{nullptr};
-    prometheus::Histogram*                latency_requests_login_{nullptr};
-    prometheus::Histogram*                latency_requests_user_register_{nullptr};
-    prometheus::Histogram*                latency_requests_user_get_id_{nullptr};
-    prometheus::Histogram*                latency_requests_user_search_{nullptr};
-};
 
 class ThreadPoolAdaptor : public httplib::TaskQueue
 {
@@ -105,51 +31,6 @@ public:
 private:
     ThreadHelpers::ThreadPool pool_;
 };
-
-class ConnectionPool
-{
-public:
-    ConnectionPool(const std::string& conn_str, size_t pool_size)
-    :   conn_str_(conn_str) {
-        for (size_t i = 0; i < pool_size; ++i) {
-            pool_.push(std::make_unique<pqxx::connection>(conn_str_));
-        }
-    }
-
-    std::unique_ptr<pqxx::connection> get_connection() {
-        std::lock_guard<std::mutex> lock(pool_mtx_);
-        if (pool_.empty()) {
-            throw std::runtime_error("No connections available");
-        }
-        auto conn = std::move(pool_.front());
-        pool_.pop();
-        if (!conn->is_open()) {
-            conn = std::make_unique<pqxx::connection>(conn_str_);
-        }
-        return conn;
-    }
-
-    void release_connection(std::unique_ptr<pqxx::connection>& conn) {
-        std::lock_guard<std::mutex> lock(pool_mtx_);
-        pool_.push(std::move(conn));
-    }
-
-private:
-    const std::string                             conn_str_{};
-    std::mutex                                    pool_mtx_{};
-    std::queue<std::unique_ptr<pqxx::connection>> pool_{};
-};
-
-struct ScopedConnection
-{
-    std::shared_ptr<ConnectionPool>   pool{nullptr};
-    std::unique_ptr<pqxx::connection> conn{nullptr};
-
-    ~ScopedConnection() { pool->release_connection(conn); }
-    ScopedConnection(std::shared_ptr<ConnectionPool>& p)
-    :   pool(p), conn(p->get_connection()) {}
-};
-
 
 
 using OnLivenessCheckFunc  = std::function<bool(void)>;
@@ -183,6 +64,7 @@ private:
     std::unique_ptr<prometheus::Exposer> exposer_{nullptr};
     std::shared_ptr<Metrics>             metrics_{nullptr};
 
+    std::set<std::string>           db_host_tags{};
     std::shared_ptr<ConnectionPool> db_pool_{nullptr};
     std::thread                     db_client_thread_{};
 

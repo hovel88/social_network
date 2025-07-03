@@ -1,8 +1,6 @@
-#include <format>
 #include <chrono>
 #include <ctime>
 #include <iostream>
-#include <stdexcept>
 #include <regex>
 #include <nlohmann/json.hpp>
 #include <bcrypt/BCrypt.hpp>
@@ -130,31 +128,56 @@ void App::db_start()
     if (db_client_started) return;
 
     try {
+        ConnectionPool::ConnectionStrCollection masters;
+        ConnectionPool::ConnectionStrCollection replicas;
         // https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
-        UrlHelpers::Url url(conf_->config().pgsql_endpoint);
-        std::string connection_str = std::format("user={} password={} host={} port={} dbname={} connect_timeout=60 application_name=social_network",
-            conf_->config().pgsql_login,
-            conf_->config().pgsql_password,
-            url.get_host(),
-            url.get_port(),
-            url.get_path().substr(1));
 
-        db_pool_ = std::make_shared<ConnectionPool>(connection_str, conf_->config().http_threads_count);
+        {
+            UrlHelpers::Url url(conf_->config().pgsql_master.url);
+            std::string tag = std::format("{}:{}",
+                url.get_host(),
+                url.get_port());
+            db_host_tags.insert(tag);
+            std::string conn_str = std::format("user={} password={} host={} port={} dbname={} connect_timeout=60 application_name=social_network",
+                conf_->config().pgsql_master.login,
+                conf_->config().pgsql_master.password,
+                url.get_host(),
+                url.get_port(),
+                url.get_path().substr(1));
+            masters.push_back(std::make_pair(conn_str, tag));
+        }
+        for (const auto& replica : conf_->config().pgsql_replica) {
+            UrlHelpers::Url url(replica.url);
+            std::string tag = std::format("{}:{}",
+                url.get_host(),
+                url.get_port());
+            db_host_tags.insert(tag);
+            std::string conn_str = std::format("user={} password={} host={} port={} dbname={} connect_timeout=60 application_name=social_network",
+                replica.login,
+                replica.password,
+                url.get_host(),
+                url.get_port(),
+                url.get_path().substr(1));
+            replicas.push_back(std::make_pair(conn_str, tag));
+        }
+
+        db_pool_ = std::make_shared<ConnectionPool>(masters, replicas, conf_->config().http_threads_count);
         if (db_pool_) {
             db_client_started = true;
+
             db_client_thread_ = std::thread([this]()->void {
                 ThreadHelpers::block_signals();
-                db_create_users_table();
-                for (const auto& one : indexes_to_drop_) {
-                    if (one == "names_search") {
-                        db_drop_index_users_names_search();
-                    }
-                }
-                for (const auto& one : indexes_to_create_) {
-                    if (one == "names_search") {
-                        db_create_index_users_names_search();
-                    }
-                }
+                // db_create_users_table();
+                // for (const auto& one : indexes_to_drop_) {
+                //     if (one == "names_search") {
+                //         db_drop_index_users_names_search();
+                //     }
+                // }
+                // for (const auto& one : indexes_to_create_) {
+                //     if (one == "names_search") {
+                //         db_create_index_users_names_search();
+                //     }
+                // }
             });
             ThreadHelpers::set_name(db_client_thread_.native_handle(), db_client_thread_name);
         }
@@ -173,7 +196,7 @@ void App::http_start()
     try {
         // регистрируем сервер для Prometheus-метрик
         exposer_ = std::make_unique<prometheus::Exposer>(conf_->config().prometheus_listening);
-        metrics_ = std::make_shared<Metrics>();
+        metrics_ = std::make_shared<Metrics>(db_host_tags);
         exposer_->RegisterCollectable(metrics_->registry());
 
         // регистрируем HTTP-сервер
@@ -279,6 +302,7 @@ bool App::pre_routing_handler(const httplib::Request& req, httplib::Response& re
 bool App::login_handler(const httplib::Request& req, httplib::Response& res)
 {
     auto json = nlohmann::json::parse(req.body);
+    nlohmann::json response{};
 
     if (!json.contains("id")
     ||  !json.contains("password")) {
@@ -300,18 +324,30 @@ bool App::login_handler(const httplib::Request& req, httplib::Response& res)
         return false;
     }
 
+    if (!db_pool_) {
+        LOG_ERROR(std::format("login_handler: there is no connection to DB"));
+
+        response = {{"code", 503}, {"message", "Server Error: login_handler: there is no connection to DB"}};
+        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res.set_content(response.dump(), "application/json");
+        return false;
+    }
+
     static const std::string query =
         "SELECT id, pwd_hash "
         "  FROM users "
         " WHERE id = $1";
 
     bool ok = false;
-    nlohmann::json response{};
     try {
         const std::string id{json["id"].get<std::string>()};
         const std::string pwd{json["password"].get<std::string>()};
 
-        ScopedConnection scoped_conn(db_pool_);
+        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
+        metrics_->count_request_to_host(scoped_conn.node_tag);
+        LOG_TRACE(std::format("login_handler: query to {} #{} tag='{}'",
+            (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+
         pqxx::work tx(*scoped_conn.conn.get());
         pqxx::result result = tx.exec(query, pqxx::params{id});
         if (result.empty()) {
@@ -346,6 +382,7 @@ bool App::login_handler(const httplib::Request& req, httplib::Response& res)
 bool App::user_register_handler(const httplib::Request& req, httplib::Response& res)
 {
     auto json = nlohmann::json::parse(req.body);
+    nlohmann::json response{};
 
     if (!json.contains("password")
     ||  !json.contains("first_name")
@@ -388,13 +425,21 @@ bool App::user_register_handler(const httplib::Request& req, httplib::Response& 
         }
     }
 
+    if (!db_pool_) {
+        LOG_ERROR(std::format("user_register_handler: there is no connection to DB"));
+
+        response = {{"code", 503}, {"message", "Server Error: user_register_handler: there is no connection to DB"}};
+        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res.set_content(response.dump(), "application/json");
+        return false;
+    }
+
     static const std::string query =
         "INSERT INTO users (first_name, second_name, birthdate, biography, city, pwd_hash) "
         "     VALUES ($1, $2, $3, $4, $5, $6) "
         "  RETURNING id";
 
     bool ok = false;
-    nlohmann::json response{};
     try {
         const std::string pwd{json["password"].get<std::string>()};
         const std::string fname{json["first_name"].get<std::string>()};
@@ -404,7 +449,11 @@ bool App::user_register_handler(const httplib::Request& req, httplib::Response& 
         const std::string city{json["city"].get<std::string>()};
         std::string hashed_pwd = BCrypt::generateHash(pwd, 12);
 
-        ScopedConnection scoped_conn(db_pool_);
+        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag);
+        LOG_TRACE(std::format("user_register_handler: query to {} #{} tag='{}'",
+            (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+
         pqxx::work tx(*scoped_conn.conn.get());
         pqxx::result result = tx.exec(query, pqxx::params{fname, sname, bdate, bio, city, hashed_pwd});
         tx.commit();
@@ -433,6 +482,8 @@ bool App::user_register_handler(const httplib::Request& req, httplib::Response& 
 
 bool App::user_get_id_handler(const httplib::Request& req, httplib::Response& res)
 {
+    nlohmann::json response{};
+
     if (!req.path_params.contains("id")) {
         LOG_ERROR(std::format("user_get_id_handler: request params does not contain 'id'"));
         res.status = httplib::StatusCode::BadRequest_400;
@@ -445,17 +496,29 @@ bool App::user_get_id_handler(const httplib::Request& req, httplib::Response& re
         return false;
     }
 
+    if (!db_pool_) {
+        LOG_ERROR(std::format("user_get_id_handler: there is no connection to DB"));
+
+        response = {{"code", 503}, {"message", "Server Error: user_get_id_handler: there is no connection to DB"}};
+        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res.set_content(response.dump(), "application/json");
+        return false;
+    }
+
     static const std::string query =
         "SELECT first_name, second_name, birthdate, biography, city "
         "  FROM users "
         " WHERE id = $1";
 
     bool ok = false;
-    nlohmann::json response{};
     try {
         const std::string id{req.path_params.at("id")};
 
-        ScopedConnection scoped_conn(db_pool_);
+        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
+        metrics_->count_request_to_host(scoped_conn.node_tag);
+        LOG_TRACE(std::format("user_get_id_handler: query to {} #{} tag='{}'",
+            (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+
         pqxx::work tx(*scoped_conn.conn.get());
         pqxx::result result = tx.exec(query, pqxx::params{id});
         if (result.empty()) {
@@ -488,10 +551,21 @@ bool App::user_get_id_handler(const httplib::Request& req, httplib::Response& re
 
 bool App::user_search_handler(const httplib::Request& req, httplib::Response& res)
 {
+    nlohmann::json response = nlohmann::json::array({});
+
     if (!req.has_param("first_name")
     ||  !req.has_param("last_name")) {
-        LOG_ERROR(std::format("user_get_id_handler: request params does not contain 'first_name' and/or 'last_name'"));
+        LOG_ERROR(std::format("user_search_handler: request params does not contain 'first_name' and/or 'last_name'"));
         res.status = httplib::StatusCode::BadRequest_400;
+        return false;
+    }
+
+    if (!db_pool_) {
+        LOG_ERROR(std::format("user_search_handler: there is no connection to DB"));
+
+        response = {{"code", 503}, {"message", "Server Error: user_search_handler: there is no connection to DB"}};
+        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res.set_content(response.dump(), "application/json");
         return false;
     }
 
@@ -503,12 +577,15 @@ bool App::user_search_handler(const httplib::Request& req, httplib::Response& re
         " LIMIT 100";
 
     bool ok = false;
-    nlohmann::json response = nlohmann::json::array({});
     try {
         const std::string first_name{req.get_param_value("first_name") + "%"};
         const std::string second_name{req.get_param_value("last_name") + "%"};
 
-        ScopedConnection scoped_conn(db_pool_);
+        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
+        metrics_->count_request_to_host(scoped_conn.node_tag);
+        LOG_TRACE(std::format("user_search_handler: query to {} #{} tag='{}'",
+            (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+
         pqxx::work tx(*scoped_conn.conn.get());
         pqxx::result result = tx.exec(query, pqxx::params{first_name, second_name});
 
@@ -644,7 +721,8 @@ void App::db_create_users_table()
     LOG_DEBUG(std::format("table 'users', trying to create table if not exists"));
 
     try {
-        ScopedConnection scoped_conn(db_pool_);
+        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag);
         pqxx::work tx(*scoped_conn.conn.get());
         tx.exec(query).no_rows();
         tx.commit();
@@ -683,7 +761,8 @@ void App::db_create_index_users_names_search()
 
     std::string query{};
     try {
-        ScopedConnection scoped_conn(db_pool_);
+        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag);
         pqxx::work tx(*scoped_conn.conn.get());
         // query = query0;
         // tx.exec(query).no_rows();
@@ -709,7 +788,8 @@ void App::db_drop_index_users_names_search()
 
     std::string query{};
     try {
-        ScopedConnection scoped_conn(db_pool_);
+        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag);
         pqxx::work tx(*scoped_conn.conn.get());
         // query = query1;
         // tx.exec(query).no_rows();

@@ -17,7 +17,7 @@ namespace config_max {
 
 namespace config_def {
 
-    extern const std::string pgsql_endpoint;
+    extern const std::string pgsql_url;
     extern const uint16_t    pgsql_port;
     extern const std::string pgsql_database;
     extern const std::string pgsql_login;
@@ -46,9 +46,15 @@ namespace config_min {
 namespace config_data {
 
     struct config_s {
-        std::string pgsql_endpoint;
-        std::string pgsql_login;
-        std::string pgsql_password;
+
+        struct pgsql_s {
+            std::string url;
+            std::string login;
+            std::string password;
+        };
+
+        pgsql_s              pgsql_master;
+        std::vector<pgsql_s> pgsql_replica;
 
         std::string http_listening;
         int         http_threads_count;
