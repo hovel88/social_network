@@ -1,42 +1,3 @@
-# FROM ubuntu:noble AS builder
-
-# RUN apt-get update && \
-#   apt-get install -y git g++ cmake \
-#     nlohmann-json3-dev \
-#     libpqxx-dev && \
-#   apt-get clean && \
-#   rm -rf /var/lib/apt/lists/*
-
-# COPY <<EOF /install_libbcrypt.sh
-# #!/bin/bash
-# # set -eux
-
-# git clone https://github.com/trusch/libbcrypt
-# cd libbcrypt
-# mkdir build
-# cd build
-# cmake ..
-# make
-# make install
-# cd ../..
-# rm -rf ./libbcrypt/
-# EOF
-# RUN chmod u+x /install_libbcrypt.sh && ./install_libbcrypt.sh
-
-# COPY . /app-src
-# WORKDIR /app-src
-# RUN g++ -std=c++20 -O3 -DNDEBUG -Iinclude -lpqxx -lpq -lbcrypt -o app sources/configuration/*.cpp sources/helpers/*.cpp sources/logger/*.cpp sources/thread_pool/*.cpp sources/*.cpp
-
-# -----------------------------------------------------------------------------
-
-# FROM ubuntu:noble
-# COPY --from=builder /app-src/app /service/
-# WORKDIR /service
-# CMD ["./app"]
-
-
-# -----------------------------------------------------------------------------
-
 FROM alpine:3.19.7 AS builder
 
 RUN apk update \
@@ -136,6 +97,23 @@ rm -rf ./prometheus-cpp/
 EOF
 RUN chmod u+x /install_prometheus-cpp.sh && ./install_prometheus-cpp.sh
 
+COPY <<EOF /install_caches.sh
+#!/bin/sh
+# set -eux
+
+git clone https://github.com/vpetrigo/caches.git
+cd caches
+git checkout v0.1.0
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TEST=OFF -DINSTALL_CACHES=ON ..
+cmake --build . --parallel 4
+cmake --install .
+cd ../..
+rm -rf ./caches/
+EOF
+RUN chmod u+x /install_caches.sh && ./install_caches.sh
+
 WORKDIR /app-src
 COPY . /app-src
 
@@ -143,12 +121,12 @@ RUN ./make_script.sh
 
 # -----------------------------------------------------------------------------
 
-FROM alpine:3.19.7
+# FROM alpine:3.19.7
 
-RUN apk update \
- && apk add libstdc++ libpq libuuid \
- && rm -rf /var/cache/apk/*
+# RUN apk update \
+#  && apk add libstdc++ libpq libuuid \
+#  && rm -rf /var/cache/apk/*
 
-WORKDIR /service
-COPY --from=builder /app-src/_build/bin/social_network /service/
-ENTRYPOINT ["./social_network"]
+# WORKDIR /service
+# COPY --from=builder /app-src/_build/bin/social_network /service/
+# ENTRYPOINT ["./social_network"]
