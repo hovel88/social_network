@@ -1,6 +1,5 @@
 #pragma once
 
-#include <format>
 #include <tuple>
 #include <utility>
 #include <queue>

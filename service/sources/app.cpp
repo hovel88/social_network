@@ -1,9 +1,7 @@
 #include <chrono>
 #include <ctime>
 #include <iostream>
-#include <regex>
 #include <nlohmann/json.hpp>
-#include <bcrypt/BCrypt.hpp>
 #include "helpers/url.h"
 #include "helpers/ip_address.h"
 #include "helpers/socket_address.h"
@@ -44,13 +42,6 @@ static std::string time_gmt_str_()
     return ss.str();
 }
 
-static bool is_valid_uuid_(const std::string& id) {
-    static const std::regex uuid_regex(
-        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-    );
-    return std::regex_match(id, uuid_regex);
-}
-
 //-----------------------------------------------------------------------------
 
 
@@ -61,29 +52,12 @@ App::~App()
     if (http_server_thread_.joinable()) {
         http_server_thread_.join();
     }
-    if (db_client_thread_.joinable()) {
-        db_client_thread_.join();
-    }
 }
 
 App::App(std::shared_ptr<cxxopts::ParseResult> cli_opts)
 :   logger_(Logging::configure_logger({ {"type", "stdout"}, {"color", "true"}, {"level", "5"} })),
     conf_(std::make_shared<Configuration>(logger_, cli_opts))
-{
-    try {
-        const auto& cli = *cli_opts;
-
-        const std::string drop_key("index_drop");
-        if (cli.count(drop_key)) {
-            indexes_to_drop_ = cli[drop_key].as<std::vector<std::string>>();
-        }
-        const std::string create_key("index_add");
-        if (cli.count(create_key)) {
-            indexes_to_create_ = cli[create_key].as<std::vector<std::string>>();
-        }
-    }
-    catch (...) {}
-}
+{}
 
 void App::run()
 {
@@ -122,7 +96,6 @@ void App::run()
 
 void App::db_start()
 {
-    static const std::string db_client_thread_name("SqlClient");
     static bool db_client_started = false;
 
     if (db_client_started) return;
@@ -164,25 +137,9 @@ void App::db_start()
         db_pool_ = std::make_shared<ConnectionPool>(masters, replicas, conf_->config().http_threads_count);
         if (db_pool_) {
             db_client_started = true;
-
-            db_client_thread_ = std::thread([this]()->void {
-                ThreadHelpers::block_signals();
-                // db_create_users_table();
-                // for (const auto& one : indexes_to_drop_) {
-                //     if (one == "names_search") {
-                //         db_drop_index_users_names_search();
-                //     }
-                // }
-                // for (const auto& one : indexes_to_create_) {
-                //     if (one == "names_search") {
-                //         db_create_index_users_names_search();
-                //     }
-                // }
-            });
-            ThreadHelpers::set_name(db_client_thread_.native_handle(), db_client_thread_name);
         }
     } catch (std::exception& ex) {
-        LOG_ERROR(std::format("{} exception: {}", db_client_thread_name, ex.what()));
+        LOG_ERROR(std::format("db_start exception: {}", ex.what()));
     }
 }
 
@@ -239,40 +196,20 @@ void App::http_start()
                     // логирование запросов
                     .set_logger([this](const auto& req, const auto& res) { log_handler(req, res); })
                     // обработчики
-                    .Post("/login", [this](const auto& req, auto& res) {
-                        auto start = std::chrono::steady_clock::now();
-                        bool ok    = login_handler(req, res);
-                        auto end   = std::chrono::steady_clock::now();
-                        metrics_->count_request_login();
-                        if (!ok) metrics_->count_failed_request_login();
-                        if (ok)  metrics_->store_latency_request_login(std::chrono::duration<double>(end - start).count());
-                    })
-                    .Post("/user/register", [this](const auto& req, auto& res) {
-                        auto start = std::chrono::steady_clock::now();
-                        bool ok    = user_register_handler(req, res);
-                        auto end   = std::chrono::steady_clock::now();
-                        metrics_->count_request_user_register();
-                        if (!ok) metrics_->count_failed_request_user_register();
-                        if (ok)  metrics_->store_latency_request_user_register(std::chrono::duration<double>(end - start).count());
-                    })
-                    .Get("/user/get/:id", [this](const auto& req, auto& res) {
-                        auto start = std::chrono::steady_clock::now();
-                        bool ok    = user_get_id_handler(req, res);
-                        auto end   = std::chrono::steady_clock::now();
-                        metrics_->count_request_user_get_id();
-                        if (!ok) metrics_->count_failed_request_user_get_id();
-                        if (ok)  metrics_->store_latency_request_user_get_id(std::chrono::duration<double>(end - start).count());
-                    })
-                    .Get("/user/search", [this](const auto& req, auto& res) {
-                        auto start = std::chrono::steady_clock::now();
-                        bool ok    = user_search_handler(req, res);
-                        auto end   = std::chrono::steady_clock::now();
-                        metrics_->count_request_user_search();
-                        if (!ok) metrics_->count_failed_request_user_search();
-                        if (ok)  metrics_->store_latency_request_user_search(std::chrono::duration<double>(end - start).count());
-                    })
                     .Get("/livez",  [this](const auto& req, auto& res) { liveness_handler(req, res); })
                     .Get("/readyz", [this](const auto& req, auto& res) { readiness_handler(req, res); });
+
+        // создаем сервисы
+        service_database = std::make_shared<DatabaseService>(logger_, metrics_, db_pool_);
+        service_auth     = std::make_shared<AuthService>(logger_, metrics_, service_database);
+        service_user     = std::make_unique<UserService>(logger_, metrics_, service_database);
+        service_friend   = std::make_unique<FriendService>(logger_, metrics_, service_database, service_auth);
+        service_post     = std::make_unique<PostService>(logger_, metrics_, service_database, service_auth);
+
+        // регистрируем сервисы в HTTP сервере
+        service_user->register_endpoints(http_server_.get());
+        service_friend->register_endpoints(http_server_.get());
+        service_post->register_endpoints(http_server_.get());
 
         http_server_thread_ = std::thread([this]()->void {
             ThreadHelpers::block_signals();
@@ -287,328 +224,14 @@ void App::http_start()
 
 bool App::pre_routing_handler(const httplib::Request& req, httplib::Response& res)
 {
-    if (req.path == "/livez"
-    ||  req.path == "/readyz"
-    ||  req.path == "/login"
-    ||  req.path == "/user/register"
-    ||  req.path.starts_with("/user/get/")
-    ||  req.path == "/user/search") {
+    if ((req.path == "/livez" || req.path == "/readyz")
+    ||  (service_user   && service_user->pre_routing_validation(req))
+    ||  (service_friend && service_friend->pre_routing_validation(req))
+    ||  (service_post   && service_post->pre_routing_validation(req))) {
         return true;
     }
     res.status = httplib::StatusCode::NotImplemented_501;
     return false;
-}
-
-bool App::login_handler(const httplib::Request& req, httplib::Response& res)
-{
-    auto json = nlohmann::json::parse(req.body);
-    nlohmann::json response{};
-
-    if (!json.contains("id")
-    ||  !json.contains("password")) {
-        LOG_ERROR(std::format("login_handler: request params does not contain 'id' and/or 'password'"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    if (!json["id"].is_string()
-    ||  !json["password"].is_string()) {
-        LOG_ERROR(std::format("login_handler: request params 'id' and 'password' should be a string"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    if (!is_valid_uuid_(json["id"].get<std::string>())) {
-        LOG_ERROR(std::format("login_handler: request param 'id' is not an UUID format"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    if (!db_pool_) {
-        LOG_ERROR(std::format("login_handler: there is no connection to DB"));
-
-        response = {{"code", 503}, {"message", "Server Error: login_handler: there is no connection to DB"}};
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
-        res.set_content(response.dump(), "application/json");
-        return false;
-    }
-
-    static const std::string query =
-        "SELECT id, pwd_hash "
-        "  FROM users "
-        " WHERE id = $1";
-
-    bool ok = false;
-    try {
-        const std::string id{json["id"].get<std::string>()};
-        const std::string pwd{json["password"].get<std::string>()};
-
-        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
-        metrics_->count_request_to_host(scoped_conn.node_tag);
-        LOG_TRACE(std::format("login_handler: query to {} #{} tag='{}'",
-            (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
-
-        pqxx::work tx(*scoped_conn.conn.get());
-        pqxx::result result = tx.exec(query, pqxx::params{id});
-        if (result.empty()) {
-            // пользователь не найден
-            res.status = httplib::StatusCode::NotFound_404;
-        } else {
-            for (const auto& row : result) {
-                const auto& [row_id, row_pwd_hash] = row.as<std::string, std::string>();
-                if (!BCrypt::validatePassword(pwd, row_pwd_hash)) {
-                    // неверный пароль
-                    LOG_ERROR(std::format("login_handler: request param 'password' is not match"));
-                    res.status = httplib::StatusCode::BadRequest_400;
-                    return false;
-                }
-                // успешная аутентификация
-                response = {{"token", row_id}};
-                break;
-            }
-            ok = true;
-        }
-    } catch (std::exception& ex) {
-        LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
-
-        response = {{"code", 500}, {"message", std::format("Error SQL: {}", ex.what())}};
-        res.status = httplib::StatusCode::InternalServerError_500;
-    }
-
-    res.set_content(response.dump(), "application/json");
-    return ok;
-}
-
-bool App::user_register_handler(const httplib::Request& req, httplib::Response& res)
-{
-    auto json = nlohmann::json::parse(req.body);
-    nlohmann::json response{};
-
-    if (!json.contains("password")
-    ||  !json.contains("first_name")
-    ||  !json.contains("second_name")
-    ||  !json.contains("birthdate")
-    ||  !json.contains("biography")
-    ||  !json.contains("city")) {
-        LOG_ERROR(std::format("login_handler: request params does not contain 'password', 'first_name', 'second_name', 'birthdate', 'biography' and/or 'city'"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    if (!json["password"].is_string()
-    ||  !json["first_name"].is_string()
-    ||  !json["second_name"].is_string()
-    ||  !json["birthdate"].is_string()
-    ||  !json["biography"].is_string()
-    ||  !json["city"].is_string()) {
-        LOG_ERROR(std::format("user_register_handler: request params 'password', 'first_name', 'second_name', 'birthdate', 'biography' and 'city' should be a string"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    if (json["password"].get<std::string>().length() < 8) {
-        // минимальная длина 8 символов
-        LOG_ERROR(std::format("user_register_handler: request param 'password' should contain at least 8 characters"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    {
-        std::tm t{};
-        std::istringstream ss(json["birthdate"].get<std::string>());
-        ss >> std::get_time(&t, "%Y-%m-%d"); // 2017-02-01
-        if (ss.fail() || t.tm_year < 0 || t.tm_year > 107) {
-            // 18лет (с 2007 г.д.), 2007 - 1900 = 107
-            LOG_ERROR(std::format("user_register_handler: request param 'birthdate' is invalid"));
-            res.status = httplib::StatusCode::BadRequest_400;
-            return false;
-        }
-    }
-
-    if (!db_pool_) {
-        LOG_ERROR(std::format("user_register_handler: there is no connection to DB"));
-
-        response = {{"code", 503}, {"message", "Server Error: user_register_handler: there is no connection to DB"}};
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
-        res.set_content(response.dump(), "application/json");
-        return false;
-    }
-
-    static const std::string query =
-        "INSERT INTO users (first_name, second_name, birthdate, biography, city, pwd_hash) "
-        "     VALUES ($1, $2, $3, $4, $5, $6) "
-        "  RETURNING id";
-
-    bool ok = false;
-    try {
-        const std::string pwd{json["password"].get<std::string>()};
-        const std::string fname{json["first_name"].get<std::string>()};
-        const std::string sname{json["second_name"].get<std::string>()};
-        const std::string bdate{json["birthdate"].get<std::string>()};
-        const std::string bio{json["biography"].get<std::string>()};
-        const std::string city{json["city"].get<std::string>()};
-        std::string hashed_pwd = BCrypt::generateHash(pwd, 12);
-
-        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-        metrics_->count_request_to_host(scoped_conn.node_tag);
-        LOG_TRACE(std::format("user_register_handler: query to {} #{} tag='{}'",
-            (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
-
-        pqxx::work tx(*scoped_conn.conn.get());
-        pqxx::result result = tx.exec(query, pqxx::params{fname, sname, bdate, bio, city, hashed_pwd});
-        tx.commit();
-        if (result.empty()) {
-            response = {{"code", 500}, {"message", std::format("Can't register user '{} {}'", fname, sname)}};
-            res.status = httplib::StatusCode::InternalServerError_500;
-        } else {
-            for (const auto& row : result) {
-                const auto& [row_id] = row.as<std::string>();
-                // успешная регистрация
-                response = {{"user_id", row_id}};
-                break;
-            }
-            ok = true;
-        }
-    } catch (std::exception& ex) {
-        LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
-
-        response = {{"code", 500}, {"message", std::format("Error SQL: {}", ex.what())}};
-        res.status = httplib::StatusCode::InternalServerError_500;
-    }
-
-    res.set_content(response.dump(), "application/json");
-    return ok;
-}
-
-bool App::user_get_id_handler(const httplib::Request& req, httplib::Response& res)
-{
-    nlohmann::json response{};
-
-    if (!req.path_params.contains("id")) {
-        LOG_ERROR(std::format("user_get_id_handler: request params does not contain 'id'"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    if (!is_valid_uuid_(req.path_params.at("id"))) {
-        LOG_ERROR(std::format("user_get_id_handler: request param 'id' is not an UUID format"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    if (!db_pool_) {
-        LOG_ERROR(std::format("user_get_id_handler: there is no connection to DB"));
-
-        response = {{"code", 503}, {"message", "Server Error: user_get_id_handler: there is no connection to DB"}};
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
-        res.set_content(response.dump(), "application/json");
-        return false;
-    }
-
-    static const std::string query =
-        "SELECT first_name, second_name, birthdate, biography, city "
-        "  FROM users "
-        " WHERE id = $1";
-
-    bool ok = false;
-    try {
-        const std::string id{req.path_params.at("id")};
-
-        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
-        metrics_->count_request_to_host(scoped_conn.node_tag);
-        LOG_TRACE(std::format("user_get_id_handler: query to {} #{} tag='{}'",
-            (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
-
-        pqxx::work tx(*scoped_conn.conn.get());
-        pqxx::result result = tx.exec(query, pqxx::params{id});
-        if (result.empty()) {
-            // анкета не найдена
-            res.status = httplib::StatusCode::NotFound_404;
-        } else {
-            for (const auto& row : result) {
-                const auto& [row_fname, row_sname, row_bdate, row_bio, row_city] = row.as<std::string, std::string, std::string, std::string, std::string>();
-                // успешное получение анкеты пользователя
-                response = {{"id", id},
-                            {"first_name", row_fname},
-                            {"second_name", row_sname},
-                            {"birthdate", row_bdate},
-                            {"biography", row_bio},
-                            {"city", row_city}};
-                break;
-            }
-            ok = true;
-        }
-    } catch (std::exception& ex) {
-        LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
-
-        response = {{"code", 500}, {"message", std::format("Error SQL: {}", ex.what())}};
-        res.status = httplib::StatusCode::InternalServerError_500;
-    }
-
-    res.set_content(response.dump(), "application/json");
-    return ok;
-}
-
-bool App::user_search_handler(const httplib::Request& req, httplib::Response& res)
-{
-    nlohmann::json response = nlohmann::json::array({});
-
-    if (!req.has_param("first_name")
-    ||  !req.has_param("last_name")) {
-        LOG_ERROR(std::format("user_search_handler: request params does not contain 'first_name' and/or 'last_name'"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    if (!db_pool_) {
-        LOG_ERROR(std::format("user_search_handler: there is no connection to DB"));
-
-        response = {{"code", 503}, {"message", "Server Error: user_search_handler: there is no connection to DB"}};
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
-        res.set_content(response.dump(), "application/json");
-        return false;
-    }
-
-    static const std::string query =
-        "SELECT id, first_name, second_name, birthdate, biography, city "
-        "  FROM users "
-        " WHERE first_name LIKE $1 AND second_name LIKE $2 "
-        " ORDER BY id "
-        " LIMIT 100";
-
-    bool ok = false;
-    try {
-        const std::string first_name{req.get_param_value("first_name") + "%"};
-        const std::string second_name{req.get_param_value("last_name") + "%"};
-
-        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
-        metrics_->count_request_to_host(scoped_conn.node_tag);
-        LOG_TRACE(std::format("user_search_handler: query to {} #{} tag='{}'",
-            (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
-
-        pqxx::work tx(*scoped_conn.conn.get());
-        pqxx::result result = tx.exec(query, pqxx::params{first_name, second_name});
-
-        for (const auto& row : result) {
-            const auto& [row_id, row_fname, row_sname, row_bdate, row_bio, row_city] = row.as<std::string, std::string, std::string, std::string, std::string, std::string>();
-            // собираем массив
-            response.push_back({{"id", row_id},
-                                {"first_name", row_fname},
-                                {"second_name", row_sname},
-                                {"birthdate", row_bdate},
-                                {"biography", row_bio},
-                                {"city", row_city}});
-        }
-        ok = true;
-    } catch (std::exception& ex) {
-        LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
-
-        response = {{"code", 500}, {"message", std::format("Error SQL: {}", ex.what())}};
-        res.status = httplib::StatusCode::InternalServerError_500;
-    }
-
-    res.set_content(response.dump(), "application/json");
-    return ok;
 }
 
 void App::liveness_handler(const httplib::Request& /*req*/, httplib::Response& res)

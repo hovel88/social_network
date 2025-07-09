@@ -1,8 +1,10 @@
 #pragma once
 
-#include <httplib.h>
-#include "app_connection_pool.h"
-#include "app_metrics.h"
+#include "app_database_service.h"
+#include "app_auth_service.h"
+#include "app_user_service.h"
+#include "app_friend_service.h"
+#include "app_post_service.h"
 #include "configuration/configuration.h"
 #include "helpers/thread_pool.h"
 
@@ -53,20 +55,21 @@ public:
 private:
     std::shared_ptr<Logging::Logger> logger_{nullptr};
     std::shared_ptr<Configuration>   conf_{nullptr};
-    std::vector<std::string>         indexes_to_drop_{};
-    std::vector<std::string>         indexes_to_create_{};
 
     std::unique_ptr<httplib::Server> http_server_{nullptr};
+    std::thread                      http_server_thread_{};
     OnLivenessCheckFunc              liveness_check_cb_{};
     OnReadinessCheckFunc             readiness_check_cb_{};
-    std::thread                      http_server_thread_{};
+    std::shared_ptr<DatabaseService> service_database{nullptr};
+    std::shared_ptr<AuthService>     service_auth{nullptr};
+    std::unique_ptr<UserService>     service_user{nullptr};
+    std::unique_ptr<FriendService>   service_friend{nullptr};
+    std::unique_ptr<PostService>     service_post{nullptr};
 
     std::unique_ptr<prometheus::Exposer> exposer_{nullptr};
     std::shared_ptr<Metrics>             metrics_{nullptr};
-
-    std::set<std::string>           db_host_tags{};
-    std::shared_ptr<ConnectionPool> db_pool_{nullptr};
-    std::thread                     db_client_thread_{};
+    std::shared_ptr<ConnectionPool>      db_pool_{nullptr};
+    std::set<std::string>                db_host_tags{};
 
     void db_start();
     void http_start();
@@ -78,10 +81,6 @@ private:
     void on_readiness_check(OnReadinessCheckFunc&& cb) { readiness_check_cb_ = std::move(cb); }
 
     bool pre_routing_handler(const httplib::Request& req, httplib::Response& res);
-    bool login_handler(const httplib::Request& req, httplib::Response& res);
-    bool user_register_handler(const httplib::Request& req, httplib::Response& res);
-    bool user_get_id_handler(const httplib::Request& req, httplib::Response& res);
-    bool user_search_handler(const httplib::Request& req, httplib::Response& res);
     void liveness_handler(const httplib::Request& req, httplib::Response& res);
     void readiness_handler(const httplib::Request& req, httplib::Response& res);
     void post_routing_handler(const httplib::Request& req, httplib::Response& res);

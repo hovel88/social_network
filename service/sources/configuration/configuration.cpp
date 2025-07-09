@@ -24,8 +24,6 @@ std::shared_ptr<cxxopts::ParseResult> configure_cli_options(int argc, char** arg
         ("http_queue",          "Max available requests queue capacity for HTTP server", cxxopts::value<int>())
         ("http_threads",        "Max available threads count to handle HTTP requests", cxxopts::value<int>())
         ("prometheus_port",     "Port Prometheus server starts listening on", cxxopts::value<int>())
-        ("i,index_add",         "Add indexes into DB (names_search) ", cxxopts::value<std::vector<std::string>>())
-        ("I,index_drop",        "Drop indexes into DB (names_search) ", cxxopts::value<std::vector<std::string>>())
         ;
 
         auto result = options.parse(argc, argv);
