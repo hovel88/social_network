@@ -6,11 +6,15 @@
 
 Библиотечное решение кеша предлагает на выбор несколько политик замены страниц кеша: Least Recently Used, Least Frequently Used, First-In/First-Out. в нашем сервисе будет использоваться LRU.
 
-Инвалидацию кеша будет проводить по событиям, как наиболее подходящий для нашего случая вариант.
+Для каждого пользователя будем хранить ленту из последних 1000 постов друзей (все вместе, отсортированные по времени создания).
+
+Инвалидацию кеша будем делать комбинированным способом:
+
+* Event-based, как наиболее подходящий для нашего случая вариант, для поддержания бОльшей актуальности
+
+* TTL-based, как достаточно отказоустойчивый вариант, для защиты от "забытых" инвалидаций
 
 В HTTP ответах на запросы будут добавлены следующие заголовки:
-
-* **X-Total-Count** - общее количество доступных постов в кеше
 
 * **X-Pagination-Offset** - параметры "текущей страницы", значение поля offset из запроса /post/feed?offset=10&limit=10
 
@@ -18,18 +22,507 @@
 
 * **X-Cache-Status** - попадание в кеш (HIT) или отсутствие данных в кеше (MISS)
 
-Основные моменты:
+* **X-Cache-Total-Count** - общее количество доступных постов в кеше
 
-* для каждого пользователя будем хранить ленту из последних 1000 постов друзей
+* **X-Cache-Expires** - время, когда кеш протухнет (формат `2025-07-09T17:49:00Z`)
+
+Сценарии:
 
 * при добавлении нового поста - добавляем его в ленту всех друзей
 
-* (инвалидация) при удалении поста - удаляем из всех лент
+* при удалении/обновлении поста - полная инвалидация кеша всех друзей (чтобы избежать неконсистентности)
 
-* (инвалидация) при обновлении поста - перестраиваем ленты
+* при удалении пользователя из друзей - удаляем посты из лент
 
-* (инвалидация) при удалении пользователя из друзей - удаляем посты из лент
+* при чтении ленты - сначала проверяем в кеше, и если нет данных, то вытаскиваем из базы и актуализируем кеш (с добавлением TTL зля защиты от застрявших обновлений)
 
+
+### Подготовка
+
+* развернуть систему
+
+```bash
+docker compose -f docker-compose.service-single.yml -f docker-compose.monitoring.yml up -d
+
+# по окончании работы остановить систему командой
+docker compose -f docker-compose.service-single.yml -f docker-compose.monitoring.yml down --remove-orphans
+```
+
+* скопировать в контейнер БД файл `misc/db_friends.sql`
+
+```bash
+docker cp ./misc/db_friends.sql postgres_db:/tmp/db_friends.sql
+```
+
+* применить файл к БД, это создаст новую таблицу **friends** с составным первичным ключом (user_id, friend_id), ограничением CHECK, для предотвращения дружбы с самим собой. также будут созданы два индекса для быстрого поиска друзей в обоих направлениях (**friends_user_id_btree_idx** и **friends_friend_id_btree_idx**)
+
+```bash
+docker exec -it postgres_db psql -U postgres -f /tmp/db_friends.sql
+```
+
+* скопировать в контейнер БД файл `misc/db_posts.sql`
+
+```bash
+docker cp ./misc/db_posts.sql postgres_db:/tmp/db_posts.sql
+```
+
+* применить файл к БД, это создаст новую таблицу **posts**. также будут созданы два индекса индексы для быстрого поиска постов по ID пользователя (/post/feed) и для сортировки (**posts_user_id_btree_idx** и **posts_created_at_btree_idx**)
+
+```bash
+docker exec -it postgres_db psql -U postgres -f /tmp/db_posts.sql
+```
+
+* т.к. ID пользователей (UUID) у нас генерируются на стороне БД, воспользуемся скриптом для генерации постов. тесто постов находится в файле `generator/posts.txt`, скрипт - `generator/generate_posts.py`.  
+скрипт подключается к запущенной базе с подготовленными таблицами, считывает ID пользователей, для ускорения использует только 100 произвольных пользователей, и для каждого из них генерирует по 300 постов.
+
+* по завершении работы скрипта-генератора можно проверить, какие пользователи были выбраны для написания постов (список UUID понадобится позже, чтобы формировать дружеские связи)
+
+```bash
+docker exec -it postgres_db psql -U postgres -c "
+SELECT DISTINCT user_id FROM posts;"
+
+               user_id                
+--------------------------------------
+ e27229af-ce60-4f7e-9df1-a3849dbeec63
+ db7c147c-8ff6-4dae-a58f-5f65d0f1c636
+ 7d7ea051-2a42-4aa6-bac6-c46143abb02e
+ 1a3d4d8a-a519-4deb-a90c-2be08d08b155
+ 1881d7f9-96fb-458e-963e-f7a6bd06ef51
+ 73b1881d-c031-4157-8881-99e349d7730e
+ a2e2b1b8-e6d0-41db-8eb7-1a90aff4b89e
+ 331dda02-ad65-4ceb-9d36-5975e0f94130
+ d7dc8195-c2f2-4a99-b081-fb66e8feebb2
+ a24e5fc9-e39d-44f0-9af8-ccca5edb1608
+ 741bc7fb-50b8-4d37-8a8e-2a5442463608
+ c348b9ec-964a-4578-b761-10ff27a996bf
+ cb828131-8fbf-4e9b-b04a-c4d69210c80e
+ 282f055f-e204-4ada-9f0e-00af5e75fd36
+ c29df521-3207-4df4-9017-38586dbe78ea
+ 61155c3b-0704-45ec-8eee-2d5127a84bdc
+ 39e227aa-e5d2-4b5b-9087-b2cff175d191
+ 6a5b9524-cb2e-4654-afbb-a9a647746c25
+ 3769cef1-2fbd-4da2-8e17-bfa3e8f523cd
+ 0d9c70e3-ffa7-4a0d-951c-0badeb43957b
+ 2712f5fa-f9a3-42fe-8d5e-c8377aea1dfc
+ e976c014-5dea-4ae8-a91b-a21cb1008fee
+ 9d9aa000-a3dd-4584-ac3c-897293b79ada
+ fcc0adb8-a5c1-4b70-a141-f91ed361a002
+ 0fa4a167-aa3f-4256-ba29-8151743c243a
+ 0f4fe3f8-a984-4674-a365-f2e5946596b4
+ 57b8c2c1-240c-485e-9d45-2e3d3a532169
+ 1c5fc8fe-eb47-46aa-93ce-6083eed82db2
+ 300ce9ef-6f1b-40af-baec-5540f5d9f9fe
+ 25d622c0-b5b3-4f6e-890f-e2f2a5467682
+ c4c95f94-3bfc-4c6b-bbfa-93317ef80ad2
+ ce0edc2f-3c12-41ef-b880-25b515fdb975
+ 2d0cb0f1-179e-490e-ab0a-48bd90e96c53
+ 2e7064df-31ef-4002-a6a3-525a08feb3bc
+ 5867a2ae-6fe0-4e4e-9c36-da5c404fce31
+ 5547b300-bce5-4fff-9011-550eab7124da
+ 6a6c34a8-306d-4884-ad6a-a308063d413d
+ 4cb52358-48c6-4170-9dea-46270573d816
+ 0c8e61a7-f1dd-4937-81c7-4d7d5b735b98
+ 1bbc55b8-2ac0-42ff-a3b4-fc881a57a147
+ 452c34d8-035a-4b43-8480-0efa0f46f2df
+ a59ef376-2ea1-4fbc-865a-c7aa8fb072fe
+ 664f7e74-c62e-481f-9bb6-e517612025e9
+ 24d1441b-66fd-4553-90db-2f7ccb6c4127
+ 6267efb1-d947-40f7-a026-d60cf625bcc8
+ b41aa09b-917b-4d23-8fd7-8deb89a2f7d6
+ b08a6d9f-df03-484e-b037-412661b69703
+ 4d964c26-9645-4e14-bec3-c9f1317c2db7
+ 30b098bd-12eb-4399-9e32-434f1c8c066c
+ 984f6206-8c54-4b74-8da1-f81b5e33a0bc
+ 5a62e8b8-1c94-40ac-b1fc-b8cf2088022b
+ 66c02b28-b451-4395-bdd7-4d6c24768338
+ d14302bd-9e4c-4d2e-a91c-46b33d929089
+ 5671aada-2fe9-4339-85d3-9dc44865e066
+ 0f9e4aa8-6015-4fba-ba5c-d7327295a2bb
+ 741ab600-0b56-4f91-8fd6-c5d36f7aca04
+ 1ac05270-decb-4904-b0a3-f9efab49f681
+ 7c2a11e5-3aaf-4bc8-b6ab-363466021785
+ 541a626f-812f-4d91-823f-93b8eea5bd5f
+ 03c75f6a-de6e-407c-b534-32d92fd20f91
+ bc4a9a65-9b5c-4884-ad8b-a45d8d5683a0
+ 2d28e339-f6e2-4396-b23a-98c1e7a919ad
+ 6c5d1665-7d45-4f08-8b75-5a9af38fdebe
+ b3ea6591-26dd-41ab-999a-154175b6b242
+ b17567c4-7c03-44e7-95d9-87be58577d69
+ 181b5aef-6ad8-408c-9b9f-dba2c55587a3
+ 3ff442d8-d7cd-4abd-aaea-22949beb3d70
+ 310d32d9-1b3c-406e-be48-9bbaa7733513
+ aeb5ac75-5473-47fa-817b-1abb13e9f954
+ bbae9824-2028-4eb2-a560-a2ee1bd505b7
+ 50c46a64-dae5-4dc7-91a4-8539a26291d6
+ 89fe8f31-772f-4273-ad2c-cab3fccb59c4
+ 602ce4a5-2064-4cc3-8da5-8e383a572c0d
+ e2349806-829e-41e0-9a91-9e9d52be448d
+ 731b2813-8732-48fa-a700-2bca6e0a3d00
+ eaf52e9d-b20d-41fe-a3a8-2900686f64ed
+ 82940d9d-d01e-4b49-b358-f241ce95e3bf
+ eabfe564-6549-402f-ae25-017af55fd883
+ 95d5255e-2fb3-4a16-8a49-957d4988695d
+ 8d531fd4-43af-48c2-81bb-c3d2c15a0e89
+ 57ec5d37-3ef8-4c9f-b259-c0084e75d3a1
+ 676c801c-9130-4c08-9872-0f05316236fc
+ 635f4e94-17a0-4285-98d8-ec41c9b42be7
+ 8323642a-767d-460a-a1f8-59b7c0afe214
+ f6521651-6588-424a-a184-9e68afbe888a
+ b28979d7-3267-4938-86eb-afbb2393d5d3
+ daf5a239-32d2-4960-9572-7bf7f0e3c7be
+ 4bd50313-8556-4d68-9d69-99cba23da054
+ 4fcdebc1-0713-459d-8d65-714caf0e1748
+ a5d8c1e1-c60b-46a9-b9ed-d3110c5d0b23
+ ed0a492d-5fd9-4427-9c23-e77de1357d38
+ bbea2679-9bcf-42a6-806b-0b50062f87f9
+ 3ce9ab58-ed43-4ce5-a52f-ac999aa39c6b
+ a7eda163-1ee0-4cb6-a4b3-d7863784b5b5
+ a6793f47-6717-4f6d-a254-00ace0ec9a2a
+ c38fdac8-4c7b-437b-9fb1-3b758827c018
+ 4dd9cf89-3d2f-4ef0-b41e-48924b1ebf32
+ 7bac2c13-d9da-4b8a-a781-413013a0440b
+ ac696f67-35dc-4bdd-b83f-3dd2eb508b9b
+ e5045e7e-17bf-419c-aea0-95e37986fc9b
+(100 rows)
+```
+
+### Проверка
+
+* для примера, используем следующие ID пользователей, полученных ранее
+
+```text
+e27229af-ce60-4f7e-9df1-a3849dbeec63
+db7c147c-8ff6-4dae-a58f-5f65d0f1c636
+7d7ea051-2a42-4aa6-bac6-c46143abb02e
+1a3d4d8a-a519-4deb-a90c-2be08d08b155
+1881d7f9-96fb-458e-963e-f7a6bd06ef51
+```
+
+* запустим наблюдение логов сервиса
+
+```bash
+docker logs -f social_srv
+```
+
+* сейчас в базе нет дружеских связей, выполним запрос получения ленты
+
+```bash
+curl -v -X GET http://localhost:6000/post/feed \
+  -H "Authorization: Bearer e27229af-ce60-4f7e-9df1-a3849dbeec63"
+
+...
+< HTTP/1.1 200 OK
+< Content-Security-Policy: default-src 'self'
+< X-Content-Type-Options: nosniff
+< Server: social_network/1.0 (Linux) httplib/0.20.0
+< Date: Thu, 10 Jul 2025 09:26:33 GMT
+< Keep-Alive: timeout=10, max=2
+< X-Frame-Options: DENY
+< Content-Length: 2
+< X-Cache-Status: MISS
+< Content-Type: application/json
+< X-Pagination-Limit: 10
+< X-Pagination-Offset: 0
+< 
+[]
+```
+
+убеждаемся, что список в ленте пуст (т.к. друзей нет), присутствуют заголовки в ответе:
+
+* `X-Cache-Status: MISS`
+* `X-Pagination-Limit: 10`
+* `X-Pagination-Offset: 0`
+
+в логах видим, что сервис сходил в базу 2 раза: (1) идентифицировать пользователя и (2) стянуть ленту друзей (но там ничего нет, т.к. друзей нет)
+
+```bash
+2025-07-10 09:26:33.667623 [TRACE] (thread_pool.cpp:58) :: thread HttpSrvPool#0, start processing task #0
+2025-07-10 09:26:33.667763 [DEBUG] (app_post_service.cpp:65) :: handler: GET /post/feed
+2025-07-10 09:26:33.669221 [TRACE] (app_database_service.cpp:19) :: authenticate_user: query to MASTER #0 tag='postgres_db:5432'
+2025-07-10 09:26:33.691557 [TRACE] (app_database_service.cpp:467) :: feed_post: query to MASTER #0 tag='postgres_db:5432'
+2025-07-10 09:26:33.731975 [TRACE] (app.cpp:321) :: 172.21.0.1 - - [10/Jul/2025:09:26:33 +0000] "GET /post/feed HTTP/1.1" 200 2 "-" "curl/7.68.0"
+2025-07-10 09:26:33.732773 [TRACE] (thread_pool.cpp:67) :: thread HttpSrvPool#0, end processing task #0
+```
+
+* добавим пользователю **e27229af-ce60-4f7e-9df1-a3849dbeec63** `первого` друга **db7c147c-8ff6-4dae-a58f-5f65d0f1c636**
+
+```bash
+curl -X PUT http://localhost:6000/friend/set/db7c147c-8ff6-4dae-a58f-5f65d0f1c636 \
+  -H "Authorization: Bearer e27229af-ce60-4f7e-9df1-a3849dbeec63" \
+  -d ''
+```
+
+в логах видим, что сервис сходил в базу 2 раза: (1) идентифицировать пользователя и (2) добавить пользователя (в одной транзакции добавляется связь дружбы в обе стороны)
+
+```bash
+2025-07-10 11:29:54.726584 [TRACE] (thread_pool.cpp:58) :: thread HttpSrvPool#0, start processing task #1
+2025-07-10 11:29:54.727030 [DEBUG] (app_friend_service.cpp:12) :: handler: PUT /friend/set/:id
+2025-07-10 11:29:54.727684 [TRACE] (app_database_service.cpp:19) :: authenticate_user: query to MASTER #0 tag='postgres_db:5432'
+2025-07-10 11:29:54.734018 [TRACE] (app_database_service.cpp:220) :: add_friend: query to MASTER #0 tag='postgres_db:5432'
+2025-07-10 11:29:54.744559 [TRACE] (app.cpp:321) :: 172.21.0.1 - - [10/Jul/2025:11:29:54 +0000] "PUT /friend/set/db7c147c-8ff6-4dae-a58f-5f65d0f1c636 HTTP/1.1" 200 0 "-" "curl/7.68.0"
+2025-07-10 11:29:54.745120 [TRACE] (thread_pool.cpp:67) :: thread HttpSrvPool#0, end processing task #1
+```
+
+* проверим, что после добавления друга, начали появляться посты в ленте
+
+```bash
+curl -v -X GET http://localhost:6000/post/feed \
+  -H "Authorization: Bearer e27229af-ce60-4f7e-9df1-a3849dbeec63"
+
+...
+< HTTP/1.1 200 OK
+< Content-Security-Policy: default-src 'self'
+< X-Content-Type-Options: nosniff
+< Server: social_network/1.0 (Linux) httplib/0.20.0
+< Date: Thu, 10 Jul 2025 12:32:47 GMT
+< Keep-Alive: timeout=10, max=2
+< X-Frame-Options: DENY
+< Content-Length: 9224
+< X-Cache-Status: MISS
+< Content-Type: application/json
+< X-Pagination-Limit: 10
+< X-Pagination-Offset: 0
+< 
+[{"author_user_id":"db7c147c-8ff6-4dae-a58f-5f65d0f1c636","id":"b6ae2d00-e45c-4ef0-b082-905278251a9f","text":"Eget mi proin sed libero enim sed faucibus turpis. Tristique senectus et netus et. Tempus urna et pharetra pharetra massa massa. Viverra accumsan in nisl nisi scelerisque. Vitae sapien pellentesque habitant morbi tristique senectus et. Condimentum lacinia quis vel eros donec ac odio tempor orci. Lacus laoreet non curabitur gravida arcu ac tortor dignissim convallis. Lobortis elementum nibh tellus molestie nunc. Facilisi morbi tempus iaculis urna id. Elementum facilisis leo vel fringilla est ullamcorper eget nulla facilisi. Id semper risus in hendrerit gravida. Quam vulputate dignissim suspendisse in est. Magna eget est lorem ipsum. Leo a diam sollicitudin tempor id eu nisl nunc. Sed odio morbi quis commodo. Mollis nunc sed id semper risus in hendrerit gravida rutrum."}
+...
+```
+
+убеждаемся, что список в ленте НЕ пуст (отображено 10 записей, в соответствии с настройками limit/offset), присутствуют заголовки в ответе:
+
+* `X-Cache-Status: MISS`
+* `X-Pagination-Limit: 10`
+* `X-Pagination-Offset: 0`
+
+заголовки показывают, что запрос не попал в кеш.  
+в логах убеждаемся, что сервис сходил в базу 2 раза: (1) идентифицировать пользователя и (2) стянуть ленту друзей (т.к. в кеше данных нет)
+
+```bash
+2025-07-10 12:32:47.762016 [TRACE] (thread_pool.cpp:58) :: thread HttpSrvPool#1, start processing task #2
+2025-07-10 12:32:47.762342 [DEBUG] (app_post_service.cpp:65) :: handler: GET /post/feed
+2025-07-10 12:32:47.762406 [TRACE] (app_database_service.cpp:19) :: authenticate_user: query to MASTER #0 tag='postgres_db:5432'
+2025-07-10 12:32:47.768053 [TRACE] (app_database_service.cpp:467) :: feed_post: query to MASTER #0 tag='postgres_db:5432'
+2025-07-10 12:32:47.849462 [TRACE] (app.cpp:321) :: 172.21.0.1 - - [10/Jul/2025:12:32:47 +0000] "GET /post/feed HTTP/1.1" 200 9224 "-" "curl/7.68.0"
+2025-07-10 12:32:47.849862 [TRACE] (thread_pool.cpp:67) :: thread HttpSrvPool#1, end processing task #2
+```
+
+* если сейчас постараться сделать повторный запрос быстро, то можно заметит, что повторный запрос выдал данные из кеша
+
+```bash
+curl -v -X GET http://localhost:6000/post/feed \
+  -H "Authorization: Bearer e27229af-ce60-4f7e-9df1-a3849dbeec63"
+
+...
+< HTTP/1.1 200 OK
+< Content-Security-Policy: default-src 'self'
+< X-Pagination-Offset: 0
+< X-Pagination-Limit: 10
+< Content-Type: application/json
+< Cache-Control: max-age=29, must-revalidate
+< X-Content-Type-Options: nosniff
+< X-Cache-Status: HIT
+< Content-Length: 9224
+< X-Frame-Options: DENY
+< X-Cache-Total-Count: 300
+< X-Cache-Expires: 2025-07-10T12:33:47Z
+< Server: social_network/1.0 (Linux) httplib/0.20.0
+< Keep-Alive: timeout=10, max=2
+< Date: Thu, 10 Jul 2025 12:33:18 GMT
+< 
+...
+```
+
+убеждаемся, что список в ленте НЕ пуст (отображено 10 записей, в соответствии с настройками limit/offset), присутствуют заголовки в ответе:
+
+* `Cache-Control: max-age=29, must-revalidate`
+* `X-Cache-Status: HIT`
+* `X-Cache-Total-Count: 300`
+* `X-Cache-Expires: 2025-07-10T12:33:47Z`
+* `X-Pagination-Limit: 10`
+* `X-Pagination-Offset: 0`
+
+заголовки показывают, что запрос попал в кеш, в кеше сейчас 300 записей, кеш протухнет по TTL через 29 секунд (в 2025-07-10T12:33:47Z).  
+в логах убеждаемся, что сервис сходил в базу 1 раз: (1) идентифицировать пользователя. за данными ленты сервис в базу не пошел, т.к. получил их из кеша
+
+```bash
+2025-07-10 12:33:18.784606 [TRACE] (thread_pool.cpp:58) :: thread HttpSrvPool#2, start processing task #3
+2025-07-10 12:33:18.784868 [DEBUG] (app_post_service.cpp:65) :: handler: GET /post/feed
+2025-07-10 12:33:18.784926 [TRACE] (app_database_service.cpp:19) :: authenticate_user: query to MASTER #0 tag='postgres_db:5432'
+2025-07-10 12:33:18.788379 [TRACE] (app.cpp:321) :: 172.21.0.1 - - [10/Jul/2025:12:33:18 +0000] "GET /post/feed HTTP/1.1" 200 9224 "-" "curl/7.68.0"
+2025-07-10 12:33:18.789412 [TRACE] (thread_pool.cpp:67) :: thread HttpSrvPool#2, end processing task #3
+```
+
+* добавим пользователю **e27229af-ce60-4f7e-9df1-a3849dbeec63** `второго` друга **7d7ea051-2a42-4aa6-bac6-c46143abb02e**
+
+```bash
+curl -X PUT http://localhost:6000/friend/set/7d7ea051-2a42-4aa6-bac6-c46143abb02e \
+  -H "Authorization: Bearer e27229af-ce60-4f7e-9df1-a3849dbeec63" \
+  -d ''
+```
+
+* добавим пользователю **e27229af-ce60-4f7e-9df1-a3849dbeec63** `третьего` друга **1a3d4d8a-a519-4deb-a90c-2be08d08b155**
+
+```bash
+curl -X PUT http://localhost:6000/friend/set/1a3d4d8a-a519-4deb-a90c-2be08d08b155 \
+  -H "Authorization: Bearer e27229af-ce60-4f7e-9df1-a3849dbeec63" \
+  -d ''
+```
+
+* добавим пользователю **e27229af-ce60-4f7e-9df1-a3849dbeec63** `четвертого` друга **1881d7f9-96fb-458e-963e-f7a6bd06ef51**
+
+```bash
+curl -X PUT http://localhost:6000/friend/set/1881d7f9-96fb-458e-963e-f7a6bd06ef51 \
+  -H "Authorization: Bearer e27229af-ce60-4f7e-9df1-a3849dbeec63" \
+  -d ''
+```
+
+* далее запросим ленту постов друзей, в первый запрос, как и ожидалось, мы получим промах по кешу
+
+```bash
+curl -v -X GET http://localhost:6000/post/feed \
+  -H "Authorization: Bearer e27229af-ce60-4f7e-9df1-a3849dbeec63"
+
+...
+< HTTP/1.1 200 OK
+< Content-Security-Policy: default-src 'self'
+< X-Content-Type-Options: nosniff
+< Server: social_network/1.0 (Linux) httplib/0.20.0
+< Date: Thu, 10 Jul 2025 13:15:58 GMT
+< Keep-Alive: timeout=10, max=2
+< X-Frame-Options: DENY
+< Content-Length: 9464
+< X-Cache-Status: MISS
+< Content-Type: application/json
+< X-Pagination-Limit: 10
+< X-Pagination-Offset: 0
+< 
+...
+```
+
+при этом по логам видим, что сервис сходил в БД и стянул записи постов
+
+```bash
+2025-07-10 13:15:58.733805 [TRACE] (thread_pool.cpp:58) :: thread HttpSrvPool#3, start processing task #15
+2025-07-10 13:15:58.733989 [DEBUG] (app_post_service.cpp:65) :: handler: GET /post/feed
+2025-07-10 13:15:58.734038 [TRACE] (app_database_service.cpp:19) :: authenticate_user: query to MASTER #0 tag='postgres_db:5432'
+2025-07-10 13:15:58.736634 [TRACE] (app_database_service.cpp:467) :: feed_post: query to MASTER #0 tag='postgres_db:5432'
+2025-07-10 13:15:58.774208 [TRACE] (app.cpp:321) :: 172.21.0.1 - - [10/Jul/2025:13:15:58 +0000] "GET /post/feed HTTP/1.1" 200 9464 "-" "curl/7.68.0"
+2025-07-10 13:15:58.774703 [TRACE] (thread_pool.cpp:67) :: thread HttpSrvPool#3, end processing task #15
+```
+
+* сделаем повторный запрос
+
+```bash
+curl -v -X GET http://localhost:6000/post/feed \
+  -H "Authorization: Bearer e27229af-ce60-4f7e-9df1-a3849dbeec63"
+
+...
+< HTTP/1.1 200 OK
+< Content-Security-Policy: default-src 'self'
+< X-Pagination-Offset: 0
+< X-Pagination-Limit: 10
+< Content-Type: application/json
+< Cache-Control: max-age=54, must-revalidate
+< X-Content-Type-Options: nosniff
+< X-Cache-Status: HIT
+< Content-Length: 9464
+< X-Frame-Options: DENY
+< X-Cache-Total-Count: 1000
+< X-Cache-Expires: 2025-07-10T13:16:58Z
+< Server: social_network/1.0 (Linux) httplib/0.20.0
+< Keep-Alive: timeout=10, max=2
+< Date: Thu, 10 Jul 2025 13:16:04 GMT
+< 
+...
+```
+
+убеждаемся, что кеш прогрет и данные были получены из него, присутствуют заголовки в ответе:
+
+* `Cache-Control: max-age=54, must-revalidate`
+* `X-Cache-Status: HIT`
+* `X-Cache-Total-Count: 1000`
+* `X-Cache-Expires: 2025-07-10T13:16:58Z`
+* `X-Pagination-Limit: 10`
+* `X-Pagination-Offset: 0`
+
+как видим, доступно в кеше **1000** записей, хотя мы добавили 4 друга, у каждого было сгенерировано по 300 сообщений, т.е. всего должно было быть 1200.  
+по логам убеждаемся, что обращений в БД за списком постов не было
+
+```bash
+2025-07-10 13:16:04.445305 [TRACE] (thread_pool.cpp:58) :: thread HttpSrvPool#0, start processing task #16
+2025-07-10 13:16:04.445576 [DEBUG] (app_post_service.cpp:65) :: handler: GET /post/feed
+2025-07-10 13:16:04.445627 [TRACE] (app_database_service.cpp:19) :: authenticate_user: query to MASTER #0 tag='postgres_db:5432'
+2025-07-10 13:16:04.450007 [TRACE] (app.cpp:321) :: 172.21.0.1 - - [10/Jul/2025:13:16:04 +0000] "GET /post/feed HTTP/1.1" 200 9464 "-" "curl/7.68.0"
+2025-07-10 13:16:04.450988 [TRACE] (thread_pool.cpp:67) :: thread HttpSrvPool#0, end processing task #16
+```
+
+* убеждаемся, что происходит инвалидация кеша по TTL.  
+для этого дожидаемся, пока истечет время (Cache-Control или X-Cache-Expires). повторяем запрос и видим, что в кеш мы не попали
+
+```bash
+curl -v -X GET http://localhost:6000/post/feed   -H "Authorization: Bearer e27229af-ce60-4f7e-9df1-a3849dbeec63"
+
+...
+< HTTP/1.1 200 OK
+< Content-Security-Policy: default-src 'self'
+< X-Content-Type-Options: nosniff
+< Server: social_network/1.0 (Linux) httplib/0.20.0
+< Date: Thu, 10 Jul 2025 13:25:08 GMT
+< Keep-Alive: timeout=10, max=2
+< X-Frame-Options: DENY
+< Content-Length: 9464
+< X-Cache-Status: MISS
+< Content-Type: application/json
+< X-Pagination-Limit: 10
+< X-Pagination-Offset: 0
+<
+...
+```
+
+* убеждаемся, что при добавлении нового поста например `вторым` другом **7d7ea051-2a42-4aa6-bac6-c46143abb02e**, этот пост появится в кеше
+
+* добавим свежий пост
+
+```bash
+curl -X POST http://localhost:6000/post/create \
+  -H "Authorization: Bearer 7d7ea051-2a42-4aa6-bac6-c46143abb02e" \
+  -d '{"text": "ололо трололо"}'
+
+{"post_id":"235187f1-09ef-449a-b738-b31a824ec987"}
+```
+
+* а затем запросим ленту
+
+```bash
+curl -v -X GET 'http://localhost:6000/post/feed?offset=0&limit=2' \
+  -H "Authorization: Bearer e27229af-ce60-4f7e-9df1-a3849dbeec63"
+
+...
+< HTTP/1.1 200 OK
+< Content-Security-Policy: default-src 'self'
+< X-Pagination-Offset: 0
+< X-Pagination-Limit: 2
+< Content-Type: application/json
+< Cache-Control: max-age=1, must-revalidate
+< X-Content-Type-Options: nosniff
+< X-Cache-Status: HIT
+< Content-Length: 1027
+< X-Frame-Options: DENY
+< X-Cache-Total-Count: 1000
+< X-Cache-Expires: 2025-07-10T13:34:00Z
+< Server: social_network/1.0 (Linux) httplib/0.20.0
+< Keep-Alive: timeout=10, max=2
+< Date: Thu, 10 Jul 2025 13:33:59 GMT
+< 
+[{"author_user_id":"7d7ea051-2a42-4aa6-bac6-c46143abb02e","id":"235187f1-09ef-449a-b738-b31a824ec987","text":"ололо трололо"},{"author_user_id":"db7c147c-8ff6-4dae-a58f-5f65d0f1c636","id":"b6ae2d00-e45c-4ef0-b082-905278251a9f","text":"Eget mi proin sed libero enim sed faucibus turpis. Tristique senectus et netus et. Tempus urna et pharetra pharetra massa massa. Viverra accumsan in nisl nisi scelerisque. Vitae sapien pellentesque habitant morbi tristique senectus et. Condimentum lacinia quis vel eros donec ac odio tempor orci. Lacus laoreet non curabitur gravida arcu ac tortor dignissim convallis. Lobortis elementum nibh tellus molestie nunc. Facilisi morbi tempus iaculis urna id. Elementum facilisis leo vel fringilla est ullamcorper eget nulla facilisi. Id semper risus in hendrerit gravida. Quam vulputate dignissim suspendisse in est. Magna eget est lorem ipsum. Leo a diam sollicitudin tempor id eu nisl nunc. Sed odio morbi quis commodo. Mollis nunc sed id semper risus in hendrerit gravida rutrum.
+"}]
+```
+
+* как видим по заголовкам, мы вытащили данные из кеша, в нём всё еще 1000 записей (хотя мы только добавили дополнительный пост), и в соотвествии с настройками offset/limit было выдано 2 записи.  
+первая из них - наш только что добавленный пост от друга, эта первая запись в выдаче, потмоу что лента отсортирована по дате создания поста.
+
+```json
+{"author_user_id":"7d7ea051-2a42-4aa6-bac6-c46143abb02e","id":"235187f1-09ef-449a-b738-b31a824ec987","text":"ололо трололо"}
+```
 
 
 
@@ -549,7 +1042,7 @@ docker compose -f docker-compose.service-single.yml -f docker-compose.monitoring
 
 ### Генерация правдоподобных данных
 
-Для генерации 1кк реалистичных записей в базе данных, надо воспользоваться Python-скриптом `users_generator/generate_users.py`. Для работы скрипта кроме установленного интерпретатора python3, потребуется еще и пакет Faker:
+Для генерации 1кк реалистичных записей в базе данных, надо воспользоваться Python-скриптом `generator/generate_users.py`. Для работы скрипта кроме установленного интерпретатора python3, потребуется еще и пакет Faker:
 
 ```bash
 python3 -m pip install faker
@@ -569,13 +1062,13 @@ Required-by:
 
 Для своей работы он использует файлы:
 
-* `users_generator/cities_raw.csv` - список названий городов,
-* `users_generator/interests_raw.csv` - список наименований интересов
-* `users_generator/people_raw.csv` - список пользователей в формате "Фамилия Имя"
+* `generator/cities_raw.csv` - список названий городов,
+* `generator/interests_raw.csv` - список наименований интересов
+* `generator/people_raw.csv` - список пользователей в формате "Фамилия Имя"
 
-По окончании работы, будет сгенерирован файл `users_generator/users.csv` с последовательностью полей `second_name,first_name,birthdate,biography,city,pwd_hash`.  
-В качестве интересов, используются по 3 штуки, произвольно выбранных из списка `users_generator/interests_raw.csv`.  
-Город выбирается рандомно из списка `users_generator/cities_raw.csv`.  
+По окончании работы, будет сгенерирован файл `generator/users.csv` с последовательностью полей `second_name,first_name,birthdate,biography,city,pwd_hash`.  
+В качестве интересов, используются по 3 штуки, произвольно выбранных из списка `generator/interests_raw.csv`.  
+Город выбирается рандомно из списка `generator/cities_raw.csv`.  
 Возраст генерируется рандомно в диапазоне от 18 до 70 лет.  
 Пароль в виде bcrypt-хэша используется для всех одинаковый.
 
@@ -588,7 +1081,7 @@ Required-by:
 * скопировать сгенерированный файл в контейнер БД
 
 ```bash
-docker cp users_generator/users.csv postgres_db:/tmp/users.csv
+docker cp generator/users.csv postgres_db:/tmp/users.csv
 ```
 
 * произвести импорт из файла
