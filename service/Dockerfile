@@ -121,12 +121,12 @@ RUN ./make_script.sh
 
 # -----------------------------------------------------------------------------
 
-# FROM alpine:3.19.7
+FROM alpine:3.19.7
 
-# RUN apk update \
-#  && apk add libstdc++ libpq libuuid \
-#  && rm -rf /var/cache/apk/*
+RUN apk update \
+ && apk add libstdc++ libpq libuuid \
+ && rm -rf /var/cache/apk/*
 
-# WORKDIR /service
-# COPY --from=builder /app-src/_build/bin/social_network /service/
-# ENTRYPOINT ["./social_network"]
+WORKDIR /service
+COPY --from=builder /app-src/_build/bin/social_network /service/
+ENTRYPOINT ["./social_network"]
