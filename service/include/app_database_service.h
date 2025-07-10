@@ -23,6 +23,7 @@ public:
         std::string id{};
         std::string author_user_id{};
         std::string text{};
+        uint64_t    created_at_msec{};
     };
 
     struct common_rv {
@@ -36,10 +37,6 @@ public:
         std::string error_str{};
         std::string token{};
     };
-    struct reguser_rv {
-        std::string error_str{};
-        std::string user_id{};
-    };
     struct user_rv {
         std::string error_str{};
         std::optional<User> user{};
@@ -51,10 +48,6 @@ public:
     struct friends_rv {
         std::string error_str{};
         std::vector<std::string> friend_ids{};
-    };
-    struct regpost_rv {
-        std::string error_str{};
-        std::string post_id{};
     };
     struct post_rv {
         std::string error_str{};
@@ -82,7 +75,7 @@ public:
 
     auth_rv authenticate_user(const std::string& user_id);
     login_rv login_user(const std::string& user_id, const std::string& user_pwd);
-    reguser_rv register_user(const std::string& fname, const std::string& sname, const std::string& bdate, const std::string& bio, const std::string& city, const std::string& pwd);
+    user_rv register_user(const std::string& fname, const std::string& sname, const std::string& bdate, const std::string& bio, const std::string& city, const std::string& pwd);
     user_rv get_user(const std::string& user_id);
     users_rv search_user(const std::string& fname, const std::string& sname);
 
@@ -90,11 +83,11 @@ public:
     common_rv delete_friend(const std::string& user_id, const std::string& friend_id);
     friends_rv get_friends(const std::string& user_id);
 
-    regpost_rv create_post(const std::string& content, const std::string& user_id);
+    post_rv create_post(const std::string& content, const std::string& user_id);
     common_rv update_post(const std::string& post_id, const std::string& content, const std::string& user_id);
     common_rv delete_post(const std::string& post_id, const std::string& user_id);
     post_rv get_post(const std::string& post_id);
-    posts_rv feed_post(const std::string& user_id);
+    posts_rv feed_post(const std::string& user_id, uint32_t limit);
 
 private:
     std::shared_ptr<Logging::Logger> logger_{nullptr};

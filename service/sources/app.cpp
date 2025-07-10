@@ -190,7 +190,7 @@ void App::http_start()
                     // обработчик исключений
                     .set_exception_handler([this](const auto& req, auto& res, std::exception_ptr ep) { exception_handler(req, res, ep); })
                     // предварительная обработка (после приема запроса)
-                    .set_pre_routing_handler([this](const auto& req, auto& res) { return (pre_routing_handler(req, res)) ? (httplib::Server::HandlerResponse::Unhandled) : (httplib::Server::HandlerResponse::Handled); })
+                    // .set_pre_routing_handler([this](const auto& req, auto& res) { return (pre_routing_handler(req, res)) ? (httplib::Server::HandlerResponse::Unhandled) : (httplib::Server::HandlerResponse::Handled); })
                     // окончательная обработка (перед отправкой ответа)
                     .set_post_routing_handler([this](const auto& req, auto& res) { post_routing_handler(req, res); })
                     // логирование запросов
@@ -200,11 +200,12 @@ void App::http_start()
                     .Get("/readyz", [this](const auto& req, auto& res) { readiness_handler(req, res); });
 
         // создаем сервисы
+        service_cache    = std::make_shared<CacheService>(CACHE_CAPACITY, std::chrono::seconds(CACHE_TTL_SEC));
         service_database = std::make_shared<DatabaseService>(logger_, metrics_, db_pool_);
         service_auth     = std::make_shared<AuthService>(logger_, metrics_, service_database);
         service_user     = std::make_unique<UserService>(logger_, metrics_, service_database);
-        service_friend   = std::make_unique<FriendService>(logger_, metrics_, service_database, service_auth);
-        service_post     = std::make_unique<PostService>(logger_, metrics_, service_database, service_auth);
+        service_friend   = std::make_unique<FriendService>(logger_, metrics_, service_database, service_cache, service_auth);
+        service_post     = std::make_unique<PostService>(logger_, metrics_, service_database, service_cache, service_auth);
 
         // регистрируем сервисы в HTTP сервере
         service_user->register_endpoints(http_server_.get());
@@ -325,104 +326,6 @@ void App::log_handler(const httplib::Request& req, const httplib::Response& res)
                                     body_bytes_sent,
                                     /*http_referer=*/"-",
                                     http_user_agent));
-}
-
-void App::db_create_users_table()
-{
-    static const std::string query =
-        "CREATE TABLE IF NOT EXISTS users ("
-        "  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),"
-        "  created_at  TIMESTAMP    NOT NULL DEFAULT NOW(),"
-        "  pwd_hash    VARCHAR(100) NOT NULL,"
-        "  first_name  VARCHAR(50)  NOT NULL,"
-        "  second_name VARCHAR(50)  NOT NULL,"
-        "  birthdate   DATE,"
-        "  biography   TEXT,"
-        "  city        VARCHAR(50)"
-        ")";
-
-    LOG_DEBUG(std::format("table 'users', trying to create table if not exists"));
-
-    try {
-        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-        metrics_->count_request_to_host(scoped_conn.node_tag);
-        pqxx::work tx(*scoped_conn.conn.get());
-        tx.exec(query).no_rows();
-        tx.commit();
-    }
-    catch (std::exception& ex) {
-        LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
-    }
-}
-
-void App::db_create_index_users_names_search()
-{
-    // можно использовать GIN + trigram для полнотекстовых поисков
-    // (включая LIKE '%ан%'), при этом надо включить расширение.
-    // однако GIN работает медленнее B-tree и занимает больше места,
-    // хотя и позволяет не только префиксный поиск, но и с любыми
-    // LIKE-запросами (префикс, суффикс, вхождение подстроки).
-    // XXX: почему то просто так планировщик не захотел использовать
-    //      именно этот индекс. вместо него предпочел Parallel Seq Scan
-    //      для запросов (first_name LIKE '%ва%' AND second_name LIKE '%ан%').
-    //      вероятно дело в отсутствии статистики у планировщика, или просто
-    //      очень низкая селективность и планировщик отбросил этот индекс.
-    // static const std::string query0 =
-    //     "CREATE EXTENSION IF NOT EXISTS pg_trgm";
-    // static const std::string query1 =
-    //     "CREATE INDEX IF NOT EXISTS users_names_gin_idx "
-    //     "ON users USING GIN(first_name gin_trgm_ops, second_name gin_trgm_ops)";
-
-    // для B-tree надо использовать text_pattern_ops, т.к. по умолчанию он
-    // не поддерживает поиск по префиксу (LIKE 'Ив%') для типов text/varchar.
-    // а для поисков по суффиксу и вхождения подстроки - не подходит вообще!
-    static const std::string query2 =
-        "CREATE INDEX IF NOT EXISTS users_names_btree_idx "
-        "ON users(first_name text_pattern_ops, second_name text_pattern_ops)";
-
-    LOG_DEBUG(std::format("table 'users', trying to create index: users_names_btree_idx"));
-
-    std::string query{};
-    try {
-        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-        metrics_->count_request_to_host(scoped_conn.node_tag);
-        pqxx::work tx(*scoped_conn.conn.get());
-        // query = query0;
-        // tx.exec(query).no_rows();
-        // query = query1;
-        // tx.exec(query).no_rows();
-        query = query2;
-        tx.exec(query).no_rows();
-        tx.commit();
-    }
-    catch (std::exception& ex) {
-        LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
-    }
-}
-
-void App::db_drop_index_users_names_search()
-{
-    // static const std::string query1 =
-    //     "DROP INDEX IF EXISTS users_names_gin_idx";
-    static const std::string query2 =
-        "DROP INDEX IF EXISTS users_names_btree_idx";
-
-    LOG_DEBUG(std::format("table 'users', trying to drop index: users_names_btree_idx"));
-
-    std::string query{};
-    try {
-        ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-        metrics_->count_request_to_host(scoped_conn.node_tag);
-        pqxx::work tx(*scoped_conn.conn.get());
-        // query = query1;
-        // tx.exec(query).no_rows();
-        query = query2;
-        tx.exec(query).no_rows();
-        tx.commit();
-    }
-    catch (std::exception& ex) {
-        LOG_ERROR(std::format("SQL connection exception: {} (query: {})", ex.what(), query));
-    }
 }
 
 } // namespace SocialNetwork

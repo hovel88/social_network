@@ -76,14 +76,14 @@ DatabaseService::login_rv DatabaseService::login_user(const std::string& user_id
     return rv;
 }
 
-DatabaseService::reguser_rv DatabaseService::register_user(const std::string& fname, const std::string& sname, const std::string& bdate, const std::string& bio, const std::string& city, const std::string& pwd)
+DatabaseService::user_rv DatabaseService::register_user(const std::string& fname, const std::string& sname, const std::string& bdate, const std::string& bio, const std::string& city, const std::string& pwd)
 {
     static const std::string query =
         "INSERT INTO users (first_name, second_name, birthdate, biography, city, pwd_hash) "
         "     VALUES ($1, $2, $3, $4, $5, $6) "
         "  RETURNING id";
 
-    reguser_rv rv{};
+    user_rv rv{};
     if (db_pool_) {
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
@@ -98,11 +98,17 @@ DatabaseService::reguser_rv DatabaseService::register_user(const std::string& fn
             tx.commit();
 
             rv.error_str.clear();
-            rv.user_id.clear();
+            rv.user = std::nullopt;
 
             for (const auto& row : result) {
                 const auto& [row_id] = row.as<std::string>();
-                rv.user_id = row_id;
+                rv.user = User{};
+                rv.user->id             = row_id;
+                rv.user->first_name     = fname;
+                rv.user->second_name    = sname;
+                rv.user->birthdate      = bdate;
+                rv.user->biography      = bio;
+                rv.user->city           = city;
                 break;
             }
         } catch (std::exception& ex) {
@@ -298,13 +304,13 @@ DatabaseService::friends_rv DatabaseService::get_friends(const std::string& user
     return rv;
 }
 
-DatabaseService::regpost_rv DatabaseService::create_post(const std::string& content, const std::string& user_id)
+DatabaseService::post_rv DatabaseService::create_post(const std::string& content, const std::string& user_id)
 {
     static const std::string query =
         "INSERT INTO posts (user_id, content) VALUES ($1, $2) "
-        "RETURNING id";
+        "RETURNING id, (EXTRACT(EPOCH FROM created_at) * 1000)::bigint as created_at_ms";
 
-    regpost_rv rv{};
+    post_rv rv{};
     if (db_pool_) {
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
@@ -317,11 +323,15 @@ DatabaseService::regpost_rv DatabaseService::create_post(const std::string& cont
             tx.commit();
 
             rv.error_str.clear();
-            rv.post_id.clear();
+            rv.post = std::nullopt;
 
             for (const auto& row : result) {
-                const auto& [row_id] = row.as<std::string>();
-                rv.post_id = row_id;
+                const auto& [row_id, row_created_at] = row.as<std::string, uint64_t>();
+                rv.post = Post{};
+                rv.post->id              = row_id;
+                rv.post->author_user_id  = user_id;
+                rv.post->text            = content;
+                rv.post->created_at_msec = row_created_at;
                 break;
             }
         } catch (std::exception& ex) {
@@ -402,7 +412,7 @@ DatabaseService::common_rv DatabaseService::delete_post(const std::string& post_
 DatabaseService::post_rv DatabaseService::get_post(const std::string& post_id)
 {
     static const std::string query =
-        "SELECT user_id, content "
+        "SELECT user_id, content, (EXTRACT(EPOCH FROM created_at) * 1000)::bigint as created_at_ms "
         "  FROM posts "
         " WHERE id = $1 AND deleted_at IS NULL";
 
@@ -422,11 +432,12 @@ DatabaseService::post_rv DatabaseService::get_post(const std::string& post_id)
             rv.post = std::nullopt;
 
             for (const auto& row : result) {
-                const auto& [row_user_id, row_content] = row.as<std::string, std::string>();
+                const auto& [row_user_id, row_content, row_created_at] = row.as<std::string, std::string, uint64_t>();
                 rv.post = Post{};
-                rv.post->id             = post_id;
-                rv.post->author_user_id = row_user_id;
-                rv.post->text           = row_content;
+                rv.post->id              = post_id;
+                rv.post->author_user_id  = row_user_id;
+                rv.post->text            = row_content;
+                rv.post->created_at_msec = row_created_at;
                 break;
             }
         } catch (std::exception& ex) {
@@ -438,15 +449,15 @@ DatabaseService::post_rv DatabaseService::get_post(const std::string& post_id)
     return rv;
 }
 
-DatabaseService::posts_rv DatabaseService::feed_post(const std::string& user_id)
+DatabaseService::posts_rv DatabaseService::feed_post(const std::string& user_id, uint32_t limit)
 {
     static const std::string query =
-        "SELECT p.id, p.user_id, p.content "
+        "SELECT p.id, p.user_id, p.content, (EXTRACT(EPOCH FROM p.created_at) * 1000)::bigint as created_at_ms "
         "  FROM posts p "
         "  JOIN friends f ON p.user_id = f.friend_id "
         " WHERE f.user_id = $1 AND p.deleted_at IS NULL "
         " ORDER BY p.created_at DESC "
-        " LIMIT 1000";
+        " LIMIT $2";
 
     posts_rv rv{};
     if (db_pool_) {
@@ -457,18 +468,19 @@ DatabaseService::posts_rv DatabaseService::feed_post(const std::string& user_id)
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{user_id});
+            pqxx::result result = tx.exec(query, pqxx::params{user_id, std::to_string(limit)});
             tx.commit();
 
             rv.error_str.clear();
             rv.posts.clear();
 
             for (const auto& row : result) {
-                const auto& [row_id, row_user_id, row_content] = row.as<std::string, std::string, std::string>();
+                const auto& [row_id, row_user_id, row_content, row_created_at] = row.as<std::string, std::string, std::string, uint64_t>();
                 auto& p = rv.posts.emplace_back(Post());
-                p.id             = row_id;
-                p.author_user_id = row_user_id;
-                p.text           = row_content;
+                p.id              = row_id;
+                p.author_user_id  = row_user_id;
+                p.text            = row_content;
+                p.created_at_msec = row_created_at;
             }
         } catch (std::exception& ex) {
             rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);

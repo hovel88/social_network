@@ -8,7 +8,8 @@ namespace SocialNetwork {
 void FriendService::register_endpoints(httplib::Server* server)
 {
     if (!server) return;
-    server->Put("/friend/set/:id", [this](const auto& req, auto& res) {
+    server->Put(R"(/friend/set/([0-9a-fA-F-]{36}))", [this](const auto& req, auto& res) {
+        LOG_DEBUG("handler: PUT /friend/set/:id");
         auto start = std::chrono::steady_clock::now();
         bool ok    = friend_set_id_handler(req, res);
         auto end   = std::chrono::steady_clock::now();
@@ -16,7 +17,8 @@ void FriendService::register_endpoints(httplib::Server* server)
         if (!ok) metrics_->count_failed_request_friend_set_id();
         if (ok)  metrics_->store_latency_request_friend_set_id(std::chrono::duration<double>(end - start).count());
     })
-    .Put("/friend/delete/:id", [this](const auto& req, auto& res) {
+    .Put(R"(/friend/delete/([0-9a-fA-F-]{36}))", [this](const auto& req, auto& res) {
+        LOG_DEBUG("handler: PUT /friend/delete/:id");
         auto start = std::chrono::steady_clock::now();
         bool ok    = friend_delete_id_handler(req, res);
         auto end   = std::chrono::steady_clock::now();
@@ -24,6 +26,7 @@ void FriendService::register_endpoints(httplib::Server* server)
         if (!ok) metrics_->count_failed_request_friend_delete_id();
         if (ok)  metrics_->store_latency_request_friend_delete_id(std::chrono::duration<double>(end - start).count());
     });
+    LOG_INFOR("endpoints registered: PUT /friend/set/:id -- PUT /friend/delete/:id");
 }
 
 bool FriendService::pre_routing_validation(const httplib::Request& req)
@@ -37,15 +40,8 @@ bool FriendService::pre_routing_validation(const httplib::Request& req)
 
 bool FriendService::friend_set_id_handler(const httplib::Request& req, httplib::Response& res)
 {
-    nlohmann::json response{};
-
-    if (!req.path_params.contains("id")) {
-        LOG_ERROR(std::format("friend_set_id_handler: request params does not contain 'id'"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    if (!AuthService::is_valid_uuid(req.path_params.at("id"))) {
+    const std::string requested_id = req.matches[1];
+    if (!AuthService::is_valid_uuid(requested_id)) {
         LOG_ERROR(std::format("friend_set_id_handler: request param 'id' is not an UUID format"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
@@ -54,9 +50,9 @@ bool FriendService::friend_set_id_handler(const httplib::Request& req, httplib::
     if (!db_ || !auth_) {
         auto err = std::format("friend_set_id_handler: database service and/or authentication service are unavailable");
         LOG_ERROR(err);
-        response = {{"code", 503}, {"message", err}};
+        nlohmann::json j = {{"code", 503}, {"message", err}};
+        res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::ServiceUnavailable_503;
-        res.set_content(response.dump(), "application/json");
         return false;
     }
 
@@ -67,13 +63,13 @@ bool FriendService::friend_set_id_handler(const httplib::Request& req, httplib::
         return false;
     }
 
-    if (id == req.path_params.at("id")) {
+    if (id == requested_id) {
         LOG_ERROR(std::format("friend_set_id_handler: cannot add yourself to friends"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
-    const std::string friend_id{req.path_params.at("id")};
+    const std::string friend_id{requested_id};
     const std::string user_id{id};
 
     std::string err{};
@@ -82,6 +78,18 @@ bool FriendService::friend_set_id_handler(const httplib::Request& req, httplib::
         if (!rv.error_str.empty()) {
             err = rv.error_str;
         } else {
+            // if (cache_) {
+            //     // после добавления в друзья "прогреваем" кеш ленты постов в соответствии с новым другом
+            //     auto user_p = db_->feed_post(user_id, 500);
+            //     for (const auto& post : user_p.posts) {
+            //         cache_->add_post_to_feed(friend_id, post);
+            //     }
+            //     auto friend_p = db_->feed_post(friend_id, 500);
+            //     for (const auto& post : friend_p.posts) {
+            //         cache_->add_post_to_feed(user_id, post);
+            //     }
+            // }
+
             // возвращаем просто 200 OK
             return true;
         }
@@ -91,8 +99,8 @@ bool FriendService::friend_set_id_handler(const httplib::Request& req, httplib::
 
     if (!err.empty()) {
         LOG_ERROR(err);
-        response = {{"code", 500}, {"message", err}};
-        res.set_content(response.dump(), "application/json");
+        nlohmann::json j = {{"code", 500}, {"message", err}};
+        res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::InternalServerError_500;
     }
     return false;
@@ -100,15 +108,8 @@ bool FriendService::friend_set_id_handler(const httplib::Request& req, httplib::
 
 bool FriendService::friend_delete_id_handler(const httplib::Request& req, httplib::Response& res)
 {
-    nlohmann::json response{};
-
-    if (!req.path_params.contains("id")) {
-        LOG_ERROR(std::format("friend_delete_id_handler: request params does not contain 'id'"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    if (!AuthService::is_valid_uuid(req.path_params.at("id"))) {
+    const std::string requested_id = req.matches[1];
+    if (!AuthService::is_valid_uuid(requested_id)) {
         LOG_ERROR(std::format("friend_delete_id_handler: request param 'id' is not an UUID format"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
@@ -117,9 +118,9 @@ bool FriendService::friend_delete_id_handler(const httplib::Request& req, httpli
     if (!db_ || !auth_) {
         auto err = std::format("friend_delete_id_handler: database service and/or authentication service are unavailable");
         LOG_ERROR(err);
-        response = {{"code", 503}, {"message", err}};
+        nlohmann::json j = {{"code", 503}, {"message", err}};
+        res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::ServiceUnavailable_503;
-        res.set_content(response.dump(), "application/json");
         return false;
     }
 
@@ -130,13 +131,13 @@ bool FriendService::friend_delete_id_handler(const httplib::Request& req, httpli
         return false;
     }
 
-    if (id == req.path_params.at("id")) {
+    if (id == requested_id) {
         LOG_ERROR(std::format("friend_delete_id_handler: cannot delete yourself from friends"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
-    const std::string friend_id{req.path_params.at("id")};
+    const std::string friend_id{requested_id};
     const std::string user_id{id};
 
     std::string err{};
@@ -145,6 +146,13 @@ bool FriendService::friend_delete_id_handler(const httplib::Request& req, httpli
         if (!rv.error_str.empty()) {
             err = rv.error_str;
         } else {
+            if (cache_) {
+                // связь по дружбе у нас двусторонняя.
+                // поэтому делаем инвалидацию кеша для обоих пользователей
+                cache_->invalidate_user(user_id);
+                cache_->invalidate_user(friend_id);
+            }
+
             // возвращаем просто 200 OK
             return true;
         }
@@ -154,8 +162,8 @@ bool FriendService::friend_delete_id_handler(const httplib::Request& req, httpli
 
     if (!err.empty()) {
         LOG_ERROR(err);
-        response = {{"code", 500}, {"message", err}};
-        res.set_content(response.dump(), "application/json");
+        nlohmann::json j = {{"code", 500}, {"message", err}};
+        res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::InternalServerError_500;
     }
     return false;

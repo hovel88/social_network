@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app_cache_service.h"
 #include "app_database_service.h"
 #include "app_auth_service.h"
 #include "app_user_service.h"
@@ -52,6 +53,10 @@ public:
 
     void run();
 
+protected:
+    static const size_t CACHE_CAPACITY = 256;
+    static const int    CACHE_TTL_SEC  = 60;
+
 private:
     std::shared_ptr<Logging::Logger> logger_{nullptr};
     std::shared_ptr<Configuration>   conf_{nullptr};
@@ -60,6 +65,7 @@ private:
     std::thread                      http_server_thread_{};
     OnLivenessCheckFunc              liveness_check_cb_{};
     OnReadinessCheckFunc             readiness_check_cb_{};
+    std::shared_ptr<CacheService>    service_cache{nullptr};
     std::shared_ptr<DatabaseService> service_database{nullptr};
     std::shared_ptr<AuthService>     service_auth{nullptr};
     std::unique_ptr<UserService>     service_user{nullptr};
@@ -87,10 +93,6 @@ private:
     void error_handler(const httplib::Request& req, httplib::Response& res);
     void exception_handler(const httplib::Request& req, httplib::Response& res, std::exception_ptr ep);
     void log_handler(const httplib::Request& req, const httplib::Response& res);
-
-    void db_create_users_table();
-    void db_create_index_users_names_search();
-    void db_drop_index_users_names_search();
 };
 
 } // namespace SocialNetwork

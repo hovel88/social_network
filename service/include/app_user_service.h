@@ -36,6 +36,9 @@ private:
     bool user_register_handler(const httplib::Request& req, httplib::Response& res);
     bool user_get_id_handler(const httplib::Request& req, httplib::Response& res);
     bool user_search_handler(const httplib::Request& req, httplib::Response& res);
+
+    static std::string serialize_users(const std::vector<DatabaseService::User>& users);
+    static std::string serialize_user(const DatabaseService::User& user);
 };
 
 } // namespace SocialNetwork

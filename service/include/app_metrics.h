@@ -23,6 +23,13 @@ public:
             total_requests_to_host_.insert(std::make_pair(t, &host_c.Add({{"host", t}})));
         }
 
+        auto& feed_c = prometheus::BuildCounter()
+            .Name("post_feed_cache_total")
+            .Help("Post feed requests from cache counter")
+            .Register(*registry_);
+        feed_cache_hits_    = &feed_c.Add({{"cache", "HIT"}});
+        feed_cache_misses_  = &feed_c.Add({{"cache", "MISS"}});
+
         auto& total_c = prometheus::BuildCounter()
             .Name("http_requests_total")
             .Help("HTTP total requests counter")
@@ -81,6 +88,9 @@ public:
         }
     }
 
+    void count_feed_cache_hits()    { feed_cache_hits_->Increment(); }
+    void count_feed_cache_misses()  { feed_cache_misses_->Increment(); }
+
     void count_request_login()            { total_requests_login_->Increment(); }
     void count_request_user_register()    { total_requests_user_register_->Increment(); }
     void count_request_user_get_id()      { total_requests_user_get_id_->Increment(); }
@@ -122,6 +132,9 @@ private:
     std::shared_ptr<prometheus::Registry> registry_{nullptr};
 
     std::map<std::string, prometheus::Counter*> total_requests_to_host_{};
+
+    prometheus::Counter*   feed_cache_hits_{nullptr};
+    prometheus::Counter*   feed_cache_misses_{nullptr};
 
     prometheus::Counter*   total_requests_login_{nullptr};
     prometheus::Counter*   total_requests_user_register_{nullptr};
