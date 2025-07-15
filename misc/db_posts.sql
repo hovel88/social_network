@@ -2,7 +2,7 @@
 -- таблица постов пользователей.
 -- первичный ключ: id (тип UUID (SERIAL создает проблемы при репликации))
 --
-CREATE TABLE posts (
+CREATE TABLE IF NOT EXISTS posts (
     id         UUID      PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMP NOT NULL    DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL    DEFAULT NOW(),

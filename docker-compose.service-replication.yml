@@ -27,7 +27,6 @@ services:
     ports:
       - ${ENV_HTTP_EXTERNAL_PORT}:6000
       - ${ENV_PROMETHEUS_EXTERNAL_PORT}:6001   # для метрик Prometheus
-    # command: "-I names_search -i names_search"
 
 
   postgres_m0:
