@@ -190,7 +190,7 @@ void App::http_start()
                     // обработчик исключений
                     .set_exception_handler([this](const auto& req, auto& res, std::exception_ptr ep) { exception_handler(req, res, ep); })
                     // предварительная обработка (после приема запроса)
-                    // .set_pre_routing_handler([this](const auto& req, auto& res) { return (pre_routing_handler(req, res)) ? (httplib::Server::HandlerResponse::Unhandled) : (httplib::Server::HandlerResponse::Handled); })
+                    .set_pre_routing_handler([this](const auto& req, auto& res) { return (pre_routing_handler(req, res)) ? (httplib::Server::HandlerResponse::Unhandled) : (httplib::Server::HandlerResponse::Handled); })
                     // окончательная обработка (перед отправкой ответа)
                     .set_post_routing_handler([this](const auto& req, auto& res) { post_routing_handler(req, res); })
                     // логирование запросов
@@ -206,11 +206,13 @@ void App::http_start()
         service_user     = std::make_unique<UserService>(logger_, metrics_, service_database);
         service_friend   = std::make_unique<FriendService>(logger_, metrics_, service_database, service_cache, service_auth);
         service_post     = std::make_unique<PostService>(logger_, metrics_, service_database, service_cache, service_auth);
+        service_dialog   = std::make_unique<DialogService>(logger_, metrics_, service_database, service_auth);
 
         // регистрируем сервисы в HTTP сервере
         service_user->register_endpoints(http_server_.get());
         service_friend->register_endpoints(http_server_.get());
         service_post->register_endpoints(http_server_.get());
+        service_dialog->register_endpoints(http_server_.get());
 
         http_server_thread_ = std::thread([this]()->void {
             ThreadHelpers::block_signals();
@@ -228,7 +230,8 @@ bool App::pre_routing_handler(const httplib::Request& req, httplib::Response& re
     if ((req.path == "/livez" || req.path == "/readyz")
     ||  (service_user   && service_user->pre_routing_validation(req))
     ||  (service_friend && service_friend->pre_routing_validation(req))
-    ||  (service_post   && service_post->pre_routing_validation(req))) {
+    ||  (service_post   && service_post->pre_routing_validation(req))
+    ||  (service_dialog && service_dialog->pre_routing_validation(req))) {
         return true;
     }
     res.status = httplib::StatusCode::NotImplemented_501;

@@ -45,6 +45,8 @@ public:
         total_requests_post_create_      = &total_c.Add({{"endpoint", "/post/create"}});
         total_requests_post_update_      = &total_c.Add({{"endpoint", "/post/update"}});
         total_requests_post_feed_        = &total_c.Add({{"endpoint", "/post/feed"}});
+        total_requests_dialog_send_      = &total_c.Add({{"endpoint", "/dialog/:id/send"}});
+        total_requests_dialog_list_      = &total_c.Add({{"endpoint", "/dialog/:id/list"}});
 
         auto& failed_c = prometheus::BuildCounter()
             .Name("http_requests_failed_total")
@@ -61,6 +63,8 @@ public:
         failed_requests_post_create_      = &failed_c.Add({{"endpoint", "/post/create"}});
         failed_requests_post_update_      = &failed_c.Add({{"endpoint", "/post/update"}});
         failed_requests_post_feed_        = &failed_c.Add({{"endpoint", "/post/feed"}});
+        failed_requests_dialog_send_      = &failed_c.Add({{"endpoint", "/dialog/:id/send"}});
+        failed_requests_dialog_list_      = &failed_c.Add({{"endpoint", "/dialog/:id/list"}});
 
         auto& latency_h = prometheus::BuildHistogram()
             .Name("http_request_duration_seconds")
@@ -77,6 +81,8 @@ public:
         latency_requests_post_create_      = &latency_h.Add({{"endpoint", "/post/create"}}, latency_buckets_);
         latency_requests_post_update_      = &latency_h.Add({{"endpoint", "/post/update"}}, latency_buckets_);
         latency_requests_post_feed_        = &latency_h.Add({{"endpoint", "/post/feed"}}, latency_buckets_);
+        latency_requests_dialog_send_      = &latency_h.Add({{"endpoint", "/dialog/:id/send"}}, latency_buckets_);
+        latency_requests_dialog_list_      = &latency_h.Add({{"endpoint", "/dialog/:id/list"}}, latency_buckets_);
     }
 
     std::shared_ptr<prometheus::Registry> registry() const { return registry_; }
@@ -102,6 +108,8 @@ public:
     void count_request_post_create()      { total_requests_post_create_->Increment(); }
     void count_request_post_update()      { total_requests_post_update_->Increment(); }
     void count_request_post_feed()        { total_requests_post_feed_->Increment(); }
+    void count_request_dialog_send()      { total_requests_dialog_send_->Increment(); }
+    void count_request_dialog_list()      { total_requests_dialog_list_->Increment(); }
 
     void count_failed_request_login()            { failed_requests_login_->Increment(); }
     void count_failed_request_user_register()    { failed_requests_user_register_->Increment(); }
@@ -114,6 +122,8 @@ public:
     void count_failed_request_post_create()      { failed_requests_post_create_->Increment(); }
     void count_failed_request_post_update()      { failed_requests_post_update_->Increment(); }
     void count_failed_request_post_feed()        { failed_requests_post_feed_->Increment(); }
+    void count_failed_request_dialog_send()      { failed_requests_dialog_send_->Increment(); }
+    void count_failed_request_dialog_list()      { failed_requests_dialog_list_->Increment(); }
 
     void store_latency_request_login(double seconds)            { latency_requests_login_->Observe(seconds); }
     void store_latency_request_user_register(double seconds)    { latency_requests_user_register_->Observe(seconds); }
@@ -126,6 +136,8 @@ public:
     void store_latency_request_post_create(double seconds)      { latency_requests_post_create_->Observe(seconds); }
     void store_latency_request_post_update(double seconds)      { latency_requests_post_update_->Observe(seconds); }
     void store_latency_request_post_feed(double seconds)        { latency_requests_post_feed_->Observe(seconds); }
+    void store_latency_request_dialog_send(double seconds)      { latency_requests_dialog_send_->Observe(seconds); }
+    void store_latency_request_dialog_list(double seconds)      { latency_requests_dialog_list_->Observe(seconds); }
 
 private:
     const std::vector<double>             latency_buckets_{};
@@ -147,6 +159,8 @@ private:
     prometheus::Counter*   total_requests_post_create_{nullptr};
     prometheus::Counter*   total_requests_post_update_{nullptr};
     prometheus::Counter*   total_requests_post_feed_{nullptr};
+    prometheus::Counter*   total_requests_dialog_send_{nullptr};
+    prometheus::Counter*   total_requests_dialog_list_{nullptr};
     prometheus::Counter*   failed_requests_login_{nullptr};
     prometheus::Counter*   failed_requests_user_register_{nullptr};
     prometheus::Counter*   failed_requests_user_get_id_{nullptr};
@@ -158,6 +172,8 @@ private:
     prometheus::Counter*   failed_requests_post_create_{nullptr};
     prometheus::Counter*   failed_requests_post_update_{nullptr};
     prometheus::Counter*   failed_requests_post_feed_{nullptr};
+    prometheus::Counter*   failed_requests_dialog_send_{nullptr};
+    prometheus::Counter*   failed_requests_dialog_list_{nullptr};
     prometheus::Histogram* latency_requests_login_{nullptr};
     prometheus::Histogram* latency_requests_user_register_{nullptr};
     prometheus::Histogram* latency_requests_user_get_id_{nullptr};
@@ -169,6 +185,8 @@ private:
     prometheus::Histogram* latency_requests_post_create_{nullptr};
     prometheus::Histogram* latency_requests_post_update_{nullptr};
     prometheus::Histogram* latency_requests_post_feed_{nullptr};
+    prometheus::Histogram* latency_requests_dialog_send_{nullptr};
+    prometheus::Histogram* latency_requests_dialog_list_{nullptr};
 };
 
 } // namespace SocialNetwork

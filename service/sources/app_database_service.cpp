@@ -491,4 +491,94 @@ DatabaseService::posts_rv DatabaseService::feed_post(const std::string& user_id,
     return rv;
 }
 
+DatabaseService::common_rv DatabaseService::send_dialog_message(const std::string& from_id, const std::string& to_id, const std::string& message)
+{
+    static const std::string query =
+        "INSERT INTO dialogs (from_user_id, to_user_id, message, shard_key) "
+        "VALUES ($1, $2, $3, $4)";
+
+    common_rv rv{};
+    if (db_pool_) {
+        try {
+            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
+            metrics_->count_request_to_host(scoped_conn.node_tag);
+            LOG_TRACE(std::format("send_dialog_message: query to {} #{} tag='{}'",
+                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+
+            pqxx::work tx(*scoped_conn.conn.get());
+            tx.exec(query, pqxx::params{from_id, to_id, message, calculate_dialog_shard_key(from_id, to_id)});
+            tx.commit();
+
+            rv.error_str.clear();
+        } catch (std::exception& ex) {
+            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        }
+    } else {
+        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    }
+    return rv;
+}
+
+DatabaseService::dialog_rv DatabaseService::list_dialog_messages(const std::string& from_id, const std::string& to_id, uint32_t limit)
+{
+    static const std::string query =
+        "SELECT from_user_id, to_user_id, message, (EXTRACT(EPOCH FROM created_at) * 1000)::bigint as created_at_ms "
+        "  FROM dialogs "
+        " WHERE (shard_key = $1 OR shard_key = $2) "
+        "   AND ((from_user_id = $3 AND to_user_id = $4) OR (from_user_id = $4 AND to_user_id = $3)) "
+        " ORDER BY created_at DESC "
+        " LIMIT $5";
+
+    dialog_rv rv{};
+    if (db_pool_) {
+        try {
+            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
+            metrics_->count_request_to_host(scoped_conn.node_tag);
+            LOG_TRACE(std::format("list_dialog_messages: query to {} #{} tag='{}'",
+                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+
+            pqxx::work tx(*scoped_conn.conn.get());
+            pqxx::result result = tx.exec(query, pqxx::params{calculate_dialog_shard_key(from_id, to_id), calculate_dialog_shard_key(to_id, from_id), from_id, to_id, std::to_string(limit)});
+            tx.commit();
+
+            rv.error_str.clear();
+            rv.messages.clear();
+
+            for (const auto& row : result) {
+                const auto& [row_from_id, row_to_id, row_message, row_created_at] = row.as<std::string, std::string, std::string, uint64_t>();
+                auto& p = rv.messages.emplace_back(Message());
+                p.from            = row_from_id;
+                p.to              = row_to_id;
+                p.text            = row_message;
+                p.created_at_msec = row_created_at;
+            }
+        } catch (std::exception& ex) {
+            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        }
+    } else {
+        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    }
+    return rv;
+}
+
+std::string DatabaseService::calculate_dialog_shard_key(const std::string& from_id, const std::string& to_id)
+{
+    // для учета эффекта Леди Гаги, можно при старте извлекать из статистики БД
+    // ID самых активных пользователей, хранить их и при генерации shard_key
+    // учитывать активность пользователя, чтобы направить диалог в отдельный шард,
+    // и таким образом равномерно распределять нагрузку таких активных пользователей
+    // по разным шардам
+
+    // static const std::unordered_set<std::string> active_users = { ... };
+    // bool from_active = active_users.count(from_id);
+    // bool to_active   = active_users.count(to_id);
+    // if (from_active || to_active) {
+    //     auto active_id = from_active ? from_id : to_id;
+    //     auto normal_id = from_active ? to_id   : from_id;
+    //     return std::format("active_{}_{}", (active_id % 32), normal_id);
+    // }
+
+    return std::format("{}_{}", from_id, to_id);
+}
+
 } // namespace SocialNetwork

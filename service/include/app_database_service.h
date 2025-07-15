@@ -25,6 +25,12 @@ public:
         std::string text{};
         uint64_t    created_at_msec{};
     };
+    struct Message {
+        std::string from{};
+        std::string to{};
+        std::string text{};
+        uint64_t    created_at_msec{};
+    };
 
     struct common_rv {
         std::string error_str{};
@@ -56,6 +62,10 @@ public:
     struct posts_rv {
         std::string error_str{};
         std::vector<Post> posts{};
+    };
+    struct dialog_rv {
+        std::string error_str{};
+        std::vector<Message> messages{};
     };
 
 public:
@@ -89,10 +99,15 @@ public:
     post_rv get_post(const std::string& post_id);
     posts_rv feed_post(const std::string& user_id, uint32_t limit);
 
+    common_rv send_dialog_message(const std::string& from_id, const std::string& to_id, const std::string& message);
+    dialog_rv list_dialog_messages(const std::string& from_id, const std::string& to_id, uint32_t limit);
+
 private:
     std::shared_ptr<Logging::Logger> logger_{nullptr};
     std::shared_ptr<Metrics>         metrics_{nullptr};
     std::shared_ptr<ConnectionPool>  db_pool_{nullptr};
+
+    static std::string calculate_dialog_shard_key(const std::string& from_id, const std::string& to_id);
 };
 
 } // namespace SocialNetwork

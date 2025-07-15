@@ -6,6 +6,7 @@
 #include "app_user_service.h"
 #include "app_friend_service.h"
 #include "app_post_service.h"
+#include "app_dialog_service.h"
 #include "configuration/configuration.h"
 #include "helpers/thread_pool.h"
 
@@ -71,6 +72,7 @@ private:
     std::unique_ptr<UserService>     service_user{nullptr};
     std::unique_ptr<FriendService>   service_friend{nullptr};
     std::unique_ptr<PostService>     service_post{nullptr};
+    std::unique_ptr<DialogService>   service_dialog{nullptr};
 
     std::unique_ptr<prometheus::Exposer> exposer_{nullptr};
     std::shared_ptr<Metrics>             metrics_{nullptr};
