@@ -1,0 +1,85 @@
+networks:
+  net:
+    driver: bridge
+
+services:
+  social_srv:
+    image: ${ENV_SOCIAL_SERVICE_IMAGE}
+    build:
+      context: ./service/
+      dockerfile: Dockerfile
+    container_name: "social_srv"
+    hostname: "social_srv"
+    # restart: on-failure
+    depends_on:
+      postgres_master:
+        condition: service_healthy
+    environment:
+      - PGSQL_MASTER_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_master:5432/postgres
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=${ENV_HTTP_QUEUE_CAPACITY}
+      - HTTP_THREADS_COUNT=${ENV_HTTP_THREADS_COUNT}
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
+    ports:
+      - ${ENV_HTTP_EXTERNAL_PORT}:6000
+      - ${ENV_PROMETHEUS_EXTERNAL_PORT}:6001   # для метрик Prometheus
+
+
+  postgres_master:
+    image: "citusdata/citus:12.1.3"
+    container_name: "postgres_master"
+    hostname: "postgres_master"
+    # restart: on-failure
+    labels: ["com.citusdata.role=Master"]
+    environment: &AUTH
+      - POSTGRES_USER=${ENV_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
+      - PGUSER="${ENV_POSTGRES_USER:-postgres}"
+      - PGPASSWORD="${ENV_POSTGRES_PASSWORD}"
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    volumes:
+      - ./sharding/postgres_master_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - net
+    ports:
+      - "15432:5432"
+
+
+  postgres_worker:
+    image: "citusdata/citus:12.1.3"
+    # container_name: "postgres_worker"
+    # hostname: "postgres_worker"
+    # restart: on-failure
+    labels: ["com.citusdata.role=Worker"]
+    depends_on: [postgres_manager]
+    environment: *AUTH
+    volumes:
+      - ./sharding/wait-for-manager.sh:/wait-for-manager.sh
+      - ./sharding/healthcheck_volume:/healthcheck
+    networks:
+      - net
+    command: "/wait-for-manager.sh"
+
+
+  postgres_manager:
+    image: "citusdata/membership-manager:0.3.0"
+    container_name: "postgres_citus_manager"
+    hostname: "postgres_citus_manager"
+    # restart: on-failure
+    depends_on: [postgres_master]
+    environment:
+      - CITUS_HOST=postgres_master
+      - POSTGRES_USER=${ENV_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
+    volumes:
+      - "${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock"
+      - ./sharding/healthcheck_volume:/healthcheck
+    networks:
+      - net
