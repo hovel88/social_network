@@ -1,5 +1,337 @@
 # Сервис социальной сети (курс Highload Architect)
 
+## ДЗ 5: Масштабируемая система диалогов (шардирование)
+
+Для шардирования с учетом эффекта "Леди Гаги", по-моему разумению, может подойти составной ключ шардирования (**from_user_id, to_user_id**).  
+Т.е. даже если один пользователь пишет сообщений сильно больше среднего, то такие сообщения потенциально распределятся в разные шарды (чем если бы ключ шардирвоания был простой **from_user_id**).
+
+Также такое разделение по составным ключам позволит достаточно эффективно находить сообщения в диалогах - т.е. все сообщения от **from_user_id** к **to_user_id** будут точно находиться на одном шарде. Хотя сообщения от **to_user_id** к **from_user_id** могут быть на другом шарде, но тоже только на одном.
+
+Но т.к. Citus имеет ограничение и не позволяет использовать несколько колонок для составного ключа шардирования, то используем обходной путь - в таблицу добавим вспомогательное поле **shard_key** типа текст. При вставке новой записи, в него будем генерировать строку, формата **'{from_user_id}_{to_user_id}'**. И это поле будем использовать как ключ шардирования таблицы в Citus.
+
+**ПРИМЕЧАНИЕ:** изначально я попытался указать для поля `GENERATED ALWAYS AS (from_user_id || '_' || to_user_id) STORED` при описании схемы, но такой трюк с Citus также не прошел, пришлось прибегнуть к формированию строки при вставке и сервиса.
+
+Мне кажется, что получился не самый плохой механизм распределения по шардам.
+
+Также, наверное, можно было бы при старте извлекать статистику БД с ID самых активных пользователей, хранить их и при генерации **shard_key** учитывать активность пользователя, чтобы направить диалог в отдельный шард, и таким образом равномерно распределять нагрузку таких активных пользователей по разным шардам.
+
+### Подготовка
+
+* развернуть систему
+
+```bash
+docker compose -f docker-compose.service-sharding.yml up -d
+
+# по окончании работы остановить систему командой
+docker compose -f docker-compose.service-sharding.yml down --remove-orphans
+```
+
+* скопировать в контейнер БД файл `misc/db_users.sql`
+
+```bash
+docker cp ./misc/db_users.sql postgres_master:/tmp/db_users.sql
+```
+
+* применить файл к БД, это создаст новую таблицу **users**. а также индекс для поиска (**users_names_btree_idx**)
+
+```bash
+docker exec -it postgres_master psql -U postgres -f /tmp/db_users.sql
+```
+
+* скопировать в контейнер БД файл `misc/db_dialogs.sql`
+
+```bash
+docker cp ./misc/db_dialogs.sql postgres_master:/tmp/db_dialogs.sql
+```
+
+* применить файл к БД, это создаст новую таблицу **dialogs**. также будут созданы два индекса для быстрого поиска диалогов от одного к другому пользователю и для поля ключа шардирвоания (**dialogs_from_to_btree_idx**, **dialogs_to_from_btree_idx** и **dialogs_shard_key_btree_idx**)
+
+```bash
+docker exec -it postgres_master psql -U postgres -f /tmp/db_dialogs.sql
+```
+
+* подготовим набор пользователей, как это делалось в ДЗ 2
+
+```bash
+docker cp generator/users.csv postgres_master:/tmp/users.csv
+
+docker exec -it postgres_master psql -U postgres -c "
+  COPY users(second_name, first_name, birthdate, biography, city, pwd_hash)
+  FROM '/tmp/users.csv' DELIMITER ',' CSV HEADER;"
+```
+
+* затем получим несколько UUID пользователей, с которыми будем работать далее
+
+```bash
+docker exec -it postgres_master psql -U postgres -c "
+SELECT id FROM users LIMIT 6;"
+
+                  id                  
+--------------------------------------
+ 22095fc3-1ec7-428c-90ce-5be0e2eebade
+ bd498662-1313-4aff-ae1a-2b26e227875b
+ 385ab26e-8244-4391-8447-9a3bfb21ce21
+ 360042d9-ce5a-4d07-abc9-50ed02475889
+ 5bbb0d11-b052-4c43-b3c5-85694d27f13a
+ f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5
+(6 rows)
+```
+
+### Проверка
+
+* подключиться к координатору:
+
+```bash
+docker exec -it postgres_master psql -U postgres
+```
+
+* создадим референсную таблицу на каждом шарде.  
+т.к. в талице **dialogs** у нас есть внешние связи к ID пользователей, не хотелось бы обращаться в запросах к локальной таблице на координаторе по сети, поэтому эта таблица будет реплицирована на каждый узел
+
+```bash
+SELECT create_reference_table('users');
+
+NOTICE:  Copying data from local table...
+NOTICE:  copying the data has completed
+DETAIL:  The local data in the table is no longer visible, but is still on disk.
+HINT:  To remove the local data, run: SELECT truncate_local_data_after_distributing_table($$public.users$$)
+ create_reference_table 
+------------------------
+ 
+(1 row)
+```
+
+* создадим распределённую таблицу
+
+```bash
+ALTER TABLE dialogs DROP CONSTRAINT dialogs_pkey;
+SELECT create_distributed_table('dialogs', 'shard_key');
+ create_distributed_table 
+--------------------------
+ 
+(1 row)
+```
+
+* создадим несколько диалоговых сообщений от пользователя **22095fc3-1ec7-428c-90ce-5be0e2eebade** к **bd498662-1313-4aff-ae1a-2b26e227875b** и обратно:
+
+```bash
+curl -X POST http://localhost:6000/dialog/bd498662-1313-4aff-ae1a-2b26e227875b/send \
+  -H "Authorization: Bearer 22095fc3-1ec7-428c-90ce-5be0e2eebade" \
+  -d '{"text": "привет!"}'
+```
+
+```bash
+curl -X POST http://localhost:6000/dialog/bd498662-1313-4aff-ae1a-2b26e227875b/send \
+  -H "Authorization: Bearer 22095fc3-1ec7-428c-90ce-5be0e2eebade" \
+  -d '{"text": "проснись, Neo"}'
+```
+
+```bash
+curl -X POST http://localhost:6000/dialog/22095fc3-1ec7-428c-90ce-5be0e2eebade/send \
+  -H "Authorization: Bearer bd498662-1313-4aff-ae1a-2b26e227875b" \
+  -d '{"text": "следуй за розовым слоником)"}'
+```
+
+* убедимся, что данные сообщений диалога сохраняются в таблице
+
+```bash
+SELECT * FROM dialogs;
+
+              dialog_id               |         created_at         |             from_user_id             |              to_user_id              |                                 shard_key                                 |           message           
+--------------------------------------+----------------------------+--------------------------------------+--------------------------------------+---------------------------------------------------------------------------+-----------------------------
+ d05a94c9-154c-4258-a534-a07eac77d37d | 2025-07-14 14:05:24.858126 | 22095fc3-1ec7-428c-90ce-5be0e2eebade | bd498662-1313-4aff-ae1a-2b26e227875b | 22095fc3-1ec7-428c-90ce-5be0e2eebade_bd498662-1313-4aff-ae1a-2b26e227875b | привет!
+ b076e009-ec53-48e8-a1da-598e0c675919 | 2025-07-14 14:05:37.359756 | 22095fc3-1ec7-428c-90ce-5be0e2eebade | bd498662-1313-4aff-ae1a-2b26e227875b | 22095fc3-1ec7-428c-90ce-5be0e2eebade_bd498662-1313-4aff-ae1a-2b26e227875b | проснись, Neo
+ 3d707602-9117-4103-8270-e2f6973b932b | 2025-07-14 14:05:44.808643 | bd498662-1313-4aff-ae1a-2b26e227875b | 22095fc3-1ec7-428c-90ce-5be0e2eebade | bd498662-1313-4aff-ae1a-2b26e227875b_22095fc3-1ec7-428c-90ce-5be0e2eebade | следуй за розовым слоником)
+(3 rows)
+```
+
+* запросим наш небольшой диалог через API
+
+```bash
+curl -X GET http://localhost:6000/dialog/22095fc3-1ec7-428c-90ce-5be0e2eebade/list \
+  -H "Authorization: Bearer bd498662-1313-4aff-ae1a-2b26e227875b"
+
+[
+  {
+    "from":"bd498662-1313-4aff-ae1a-2b26e227875b",
+    "text":"следуй за розовым слоником)",
+    "to":"22095fc3-1ec7-428c-90ce-5be0e2eebade"
+  },
+  {
+    "from":"22095fc3-1ec7-428c-90ce-5be0e2eebade",
+    "text":"проснись, Neo",
+    "to":"bd498662-1313-4aff-ae1a-2b26e227875b"
+  },
+  {
+    "from":"22095fc3-1ec7-428c-90ce-5be0e2eebade",
+    "text":"привет!",
+    "to":"bd498662-1313-4aff-ae1a-2b26e227875b"
+  }
+]
+```
+
+* проверим, на каких узлах лежат сейчас данные:
+
+```bash
+SELECT nodename, count(*) FROM citus_shards GROUP BY nodename;
+
+             nodename             | count 
+----------------------------------+-------
+ social_network-postgres_worker-1 |     33
+(1 row)
+```
+
+* добавим еще несколько шардов:
+
+```bash
+docker compose -f docker-compose.service-sharding.yml up --scale postgres_worker=5 -d
+
+[+] Running 8/8
+ ✔ Container postgres_master                   Healthy                                      3.3s 
+ ✔ Container social_srv                        Running                                      0.0s 
+ ✔ Container postgres_citus_manager            Running                                      0.0s 
+ ✔ Container social_network-postgres_worker-5  Started                                      7.4s 
+ ✔ Container social_network-postgres_worker-2  Started                                      6.1s 
+ ✔ Container social_network-postgres_worker-3  Started                                      4.1s 
+ ✔ Container social_network-postgres_worker-4  Started                                      4.6s 
+ ✔ Container social_network-postgres_worker-1  Running                                      0.5s
+```
+
+* убедиться, что координатор видит шарды:
+
+```bash
+SELECT master_get_active_worker_nodes();
+
+ master_get_active_worker_nodes 
+--------------------------------
+ (social_network-postgres_worker-1,5432)
+ (social_network-postgres_worker-4,5432)
+ (social_network-postgres_worker-5,5432)
+ (social_network-postgres_worker-2,5432)
+ (social_network-postgres_worker-3,5432)
+(5 rows)
+```
+
+* перебалансируем данные:
+
+```bash
+SELECT rebalance_table_shards('dialogs');
+```
+
+* создадим еще несколько диалоговых сообщений, в этот раз от пользователя **5bbb0d11-b052-4c43-b3c5-85694d27f13a** к **f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5** и обратно:
+
+```bash
+curl -X POST http://localhost:6000/dialog/f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5/send \
+  -H "Authorization: Bearer 5bbb0d11-b052-4c43-b3c5-85694d27f13a" \
+  -d '{"text": "А знаешь, как в Париже называют четвертьфунтовый чизбургер?"}'
+```
+
+```bash
+curl -X POST http://localhost:6000/dialog/5bbb0d11-b052-4c43-b3c5-85694d27f13a/send \
+  -H "Authorization: Bearer f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5" \
+  -d '{"text": "Что, они не зовут его четвертьфунтовый чизбургер?"}'
+```
+
+```bash
+curl -X POST http://localhost:6000/dialog/f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5/send \
+  -H "Authorization: Bearer 5bbb0d11-b052-4c43-b3c5-85694d27f13a" \
+  -d '{"text": "У них там метрическая система. Они вообще там не понимают, что это такое четверть фунта."}'
+```
+
+```bash
+curl -X POST http://localhost:6000/dialog/5bbb0d11-b052-4c43-b3c5-85694d27f13a/send \
+  -H "Authorization: Bearer f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5" \
+  -d '{"text": "И как же они его зовут?"}'
+```
+
+```bash
+curl -X POST http://localhost:6000/dialog/f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5/send \
+  -H "Authorization: Bearer 5bbb0d11-b052-4c43-b3c5-85694d27f13a" \
+  -d '{"text": "Они зовут его «Королевский чизбургер»."}'
+```
+
+* запросим наш диалог через API:
+
+```bash
+curl -X GET http://localhost:6000/dialog/5bbb0d11-b052-4c43-b3c5-85694d27f13a/list \
+  -H "Authorization: Bearer f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5"
+
+[
+  {
+    "from":"5bbb0d11-b052-4c43-b3c5-85694d27f13a",
+    "text":"Они зовут его «Королевский чизбургер».",
+    "to":"f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5"
+  },
+  {
+    "from":"f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5",
+    "text":"И как же они его зовут?",
+    "to":"5bbb0d11-b052-4c43-b3c5-85694d27f13a"
+  },
+  {
+    "from":"5bbb0d11-b052-4c43-b3c5-85694d27f13a",
+    "text":"У них там метрическая система. Они вообще там не понимают, что это такое четверть фунта.",
+    "to":"f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5"
+  },
+  {
+    "from":"f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5",
+    "text":"Что, они не зовут его четвертьфунтовый чизбургер?",
+    "to":"5bbb0d11-b052-4c43-b3c5-85694d27f13a"
+  },
+  {
+    "from":"5bbb0d11-b052-4c43-b3c5-85694d27f13a",
+    "text":"А знаешь, как в Париже называют четвертьфунтовый чизбургер?",
+    "to":"f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5"
+  }
+]
+```
+
+* проверим, на каких узлах теперь лежат данные.  
+видим, что шарды перераспределились по нодам воркеров
+
+```bash
+SELECT nodename, count(*) FROM citus_shards GROUP BY nodename;
+
+             nodename             | count 
+----------------------------------+-------
+ social_network-postgres_worker-1 |     8
+ social_network-postgres_worker-2 |     8
+ social_network-postgres_worker-3 |     7
+ social_network-postgres_worker-4 |     7
+ social_network-postgres_worker-5 |     7
+(5 rows)
+```
+
+* в завершении посмотрим план запроса.  
+видим, что запрос ушел на один шард **dialogs_102023**.  
+видим, что шард расположен на одном из воркеров (**Node: host=social_network-postgres_worker-5**).  
+видим, что при поиске/фильтрации используются созданные индексы **dialogs_to_from_btree_idx_102023**.  
+из плана можем заключить, что сначала выполняется фильтрация по **shard_key**, что сокращает количество проверяемых шардов, прежде чем перейти к проверке конкретных **from_user_id** и **to_user_id**
+
+```bash
+EXPLAIN SELECT message FROM dialogs WHERE (shard_key = '5bbb0d11-b052-4c43-b3c5-85694d27f13a_f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5' OR shard_key = 'f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5_5bbb0d11-b052-4c43-b3c5-85694d27f13a') AND ((from_user_id = 'f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5' AND to_user_id = '5bbb0d11-b052-4c43-b3c5-85694d27f13a') OR (from_user_id = '5bbb0d11-b052-4c43-b3c5-85694d27f13a' AND to_user_id = 'f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5')) ORDER BY created_at;
+
+                 QUERY PLAN                                                                                                                                               
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=11041.82..11291.82 rows=100000 width=40)
+   Sort Key: remote_scan.worker_column_2
+   ->  Custom Scan (Citus Adaptive)  (cost=0.00..0.00 rows=100000 width=40)
+         Task Count: 2
+         Tasks Shown: One of 2
+         ->  Task
+               Node: host=social_network-postgres_worker-5 port=5432 dbname=postgres
+               ->  Bitmap Heap Scan on dialogs_102023 dialogs  (cost=8.32..12.35 rows=1 width=40)
+                     Recheck Cond: (((to_user_id = '5bbb0d11-b052-4c43-b3c5-85694d27f13a'::uuid) AND (from_user_id = 'f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5'::uuid)) OR ((to_user_id = 'f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5'::uuid) AND (from_user_id = '5bbb0d11-b052-4c43-b3c5-85694d27f13a'::uuid)))
+                     Filter: ((shard_key = '5bbb0d11-b052-4c43-b3c5-85694d27f13a_f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5'::text) OR (shard_key = 'f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5_5bbb0d11-b052-4c43-b3c5-85694d27f13a'::text))
+                     ->  BitmapOr  (cost=8.32..8.32 rows=1 width=0)
+                           ->  Bitmap Index Scan on dialogs_to_from_btree_idx_102023  (cost=0.00..4.16 rows=1 width=0)
+                                 Index Cond: ((to_user_id = '5bbb0d11-b052-4c43-b3c5-85694d27f13a'::uuid) AND (from_user_id = 'f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5'::uuid))
+                           ->  Bitmap Index Scan on dialogs_to_from_btree_idx_102023  (cost=0.00..4.16 rows=1 width=0)
+                                 Index Cond: ((to_user_id = 'f6d0ad4b-2b1f-49b0-a24f-47cab694d4e5'::uuid) AND (from_user_id = '5bbb0d11-b052-4c43-b3c5-85694d27f13a'::uuid))
+(15 rows)
+```
+
+
+
 ## ДЗ 4: Лента постов и друзей (кеширование)
 
 ### Структура кеша
@@ -88,101 +420,7 @@ SELECT DISTINCT user_id FROM posts;"
  7d7ea051-2a42-4aa6-bac6-c46143abb02e
  1a3d4d8a-a519-4deb-a90c-2be08d08b155
  1881d7f9-96fb-458e-963e-f7a6bd06ef51
- 73b1881d-c031-4157-8881-99e349d7730e
- a2e2b1b8-e6d0-41db-8eb7-1a90aff4b89e
- 331dda02-ad65-4ceb-9d36-5975e0f94130
- d7dc8195-c2f2-4a99-b081-fb66e8feebb2
- a24e5fc9-e39d-44f0-9af8-ccca5edb1608
- 741bc7fb-50b8-4d37-8a8e-2a5442463608
- c348b9ec-964a-4578-b761-10ff27a996bf
- cb828131-8fbf-4e9b-b04a-c4d69210c80e
- 282f055f-e204-4ada-9f0e-00af5e75fd36
- c29df521-3207-4df4-9017-38586dbe78ea
- 61155c3b-0704-45ec-8eee-2d5127a84bdc
- 39e227aa-e5d2-4b5b-9087-b2cff175d191
- 6a5b9524-cb2e-4654-afbb-a9a647746c25
- 3769cef1-2fbd-4da2-8e17-bfa3e8f523cd
- 0d9c70e3-ffa7-4a0d-951c-0badeb43957b
- 2712f5fa-f9a3-42fe-8d5e-c8377aea1dfc
- e976c014-5dea-4ae8-a91b-a21cb1008fee
- 9d9aa000-a3dd-4584-ac3c-897293b79ada
- fcc0adb8-a5c1-4b70-a141-f91ed361a002
- 0fa4a167-aa3f-4256-ba29-8151743c243a
- 0f4fe3f8-a984-4674-a365-f2e5946596b4
- 57b8c2c1-240c-485e-9d45-2e3d3a532169
- 1c5fc8fe-eb47-46aa-93ce-6083eed82db2
- 300ce9ef-6f1b-40af-baec-5540f5d9f9fe
- 25d622c0-b5b3-4f6e-890f-e2f2a5467682
- c4c95f94-3bfc-4c6b-bbfa-93317ef80ad2
- ce0edc2f-3c12-41ef-b880-25b515fdb975
- 2d0cb0f1-179e-490e-ab0a-48bd90e96c53
- 2e7064df-31ef-4002-a6a3-525a08feb3bc
- 5867a2ae-6fe0-4e4e-9c36-da5c404fce31
- 5547b300-bce5-4fff-9011-550eab7124da
- 6a6c34a8-306d-4884-ad6a-a308063d413d
- 4cb52358-48c6-4170-9dea-46270573d816
- 0c8e61a7-f1dd-4937-81c7-4d7d5b735b98
- 1bbc55b8-2ac0-42ff-a3b4-fc881a57a147
- 452c34d8-035a-4b43-8480-0efa0f46f2df
- a59ef376-2ea1-4fbc-865a-c7aa8fb072fe
- 664f7e74-c62e-481f-9bb6-e517612025e9
- 24d1441b-66fd-4553-90db-2f7ccb6c4127
- 6267efb1-d947-40f7-a026-d60cf625bcc8
- b41aa09b-917b-4d23-8fd7-8deb89a2f7d6
- b08a6d9f-df03-484e-b037-412661b69703
- 4d964c26-9645-4e14-bec3-c9f1317c2db7
- 30b098bd-12eb-4399-9e32-434f1c8c066c
- 984f6206-8c54-4b74-8da1-f81b5e33a0bc
- 5a62e8b8-1c94-40ac-b1fc-b8cf2088022b
- 66c02b28-b451-4395-bdd7-4d6c24768338
- d14302bd-9e4c-4d2e-a91c-46b33d929089
- 5671aada-2fe9-4339-85d3-9dc44865e066
- 0f9e4aa8-6015-4fba-ba5c-d7327295a2bb
- 741ab600-0b56-4f91-8fd6-c5d36f7aca04
- 1ac05270-decb-4904-b0a3-f9efab49f681
- 7c2a11e5-3aaf-4bc8-b6ab-363466021785
- 541a626f-812f-4d91-823f-93b8eea5bd5f
- 03c75f6a-de6e-407c-b534-32d92fd20f91
- bc4a9a65-9b5c-4884-ad8b-a45d8d5683a0
- 2d28e339-f6e2-4396-b23a-98c1e7a919ad
- 6c5d1665-7d45-4f08-8b75-5a9af38fdebe
- b3ea6591-26dd-41ab-999a-154175b6b242
- b17567c4-7c03-44e7-95d9-87be58577d69
- 181b5aef-6ad8-408c-9b9f-dba2c55587a3
- 3ff442d8-d7cd-4abd-aaea-22949beb3d70
- 310d32d9-1b3c-406e-be48-9bbaa7733513
- aeb5ac75-5473-47fa-817b-1abb13e9f954
- bbae9824-2028-4eb2-a560-a2ee1bd505b7
- 50c46a64-dae5-4dc7-91a4-8539a26291d6
- 89fe8f31-772f-4273-ad2c-cab3fccb59c4
- 602ce4a5-2064-4cc3-8da5-8e383a572c0d
- e2349806-829e-41e0-9a91-9e9d52be448d
- 731b2813-8732-48fa-a700-2bca6e0a3d00
- eaf52e9d-b20d-41fe-a3a8-2900686f64ed
- 82940d9d-d01e-4b49-b358-f241ce95e3bf
- eabfe564-6549-402f-ae25-017af55fd883
- 95d5255e-2fb3-4a16-8a49-957d4988695d
- 8d531fd4-43af-48c2-81bb-c3d2c15a0e89
- 57ec5d37-3ef8-4c9f-b259-c0084e75d3a1
- 676c801c-9130-4c08-9872-0f05316236fc
- 635f4e94-17a0-4285-98d8-ec41c9b42be7
- 8323642a-767d-460a-a1f8-59b7c0afe214
- f6521651-6588-424a-a184-9e68afbe888a
- b28979d7-3267-4938-86eb-afbb2393d5d3
- daf5a239-32d2-4960-9572-7bf7f0e3c7be
- 4bd50313-8556-4d68-9d69-99cba23da054
- 4fcdebc1-0713-459d-8d65-714caf0e1748
- a5d8c1e1-c60b-46a9-b9ed-d3110c5d0b23
- ed0a492d-5fd9-4427-9c23-e77de1357d38
- bbea2679-9bcf-42a6-806b-0b50062f87f9
- 3ce9ab58-ed43-4ce5-a52f-ac999aa39c6b
- a7eda163-1ee0-4cb6-a4b3-d7863784b5b5
- a6793f47-6717-4f6d-a254-00ace0ec9a2a
- c38fdac8-4c7b-437b-9fb1-3b758827c018
- 4dd9cf89-3d2f-4ef0-b41e-48924b1ebf32
- 7bac2c13-d9da-4b8a-a781-413013a0440b
- ac696f67-35dc-4bdd-b83f-3dd2eb508b9b
- e5045e7e-17bf-419c-aea0-95e37986fc9b
+...
 (100 rows)
 ```
 
