@@ -2,8 +2,6 @@
 #include <bcrypt/BCrypt.hpp>
 #include "app_database_service.h"
 
-namespace SocialNetwork {
-
 DatabaseService::auth_rv DatabaseService::authenticate_user(const std::string& user_id)
 {
     static const std::string query =
@@ -580,5 +578,3 @@ std::string DatabaseService::calculate_dialog_shard_key(const std::string& from_
 
     return std::format("{}_{}", from_id, to_id);
 }
-
-} // namespace SocialNetwork

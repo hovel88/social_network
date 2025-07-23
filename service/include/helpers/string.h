@@ -2,8 +2,6 @@
 
 #include <string>
 
-namespace SocialNetwork {
-
 namespace StringHelpers {
 
 std::string trim_left(const std::string& s);
@@ -35,5 +33,3 @@ std::string& to_uppercase_in_place(std::string& s);
 std::string& to_lowercase_in_place(std::string& s);
 
 } // namespace StringHelpers
-
-} // namespace SocialNetwork

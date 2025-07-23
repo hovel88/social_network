@@ -10,8 +10,6 @@
 #include "configuration/configuration.h"
 #include "helpers/thread_pool.h"
 
-namespace SocialNetwork {
-
 class ThreadPoolAdaptor : public httplib::TaskQueue
 {
 public:
@@ -96,5 +94,3 @@ private:
     void exception_handler(const httplib::Request& req, httplib::Response& res, std::exception_ptr ep);
     void log_handler(const httplib::Request& req, const httplib::Response& res);
 };
-
-} // namespace SocialNetwork

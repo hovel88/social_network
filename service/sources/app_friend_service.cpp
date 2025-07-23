@@ -3,8 +3,6 @@
 #include <nlohmann/json.hpp>
 #include "app_friend_service.h"
 
-namespace SocialNetwork {
-
 void FriendService::register_endpoints(httplib::Server* server)
 {
     if (!server) return;
@@ -168,5 +166,3 @@ bool FriendService::friend_delete_id_handler(const httplib::Request& req, httpli
     }
     return false;
 }
-
-} // namespace SocialNetwork

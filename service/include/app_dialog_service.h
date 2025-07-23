@@ -6,8 +6,6 @@
 #include "app_database_service.h"
 #include "app_auth_service.h"
 
-namespace SocialNetwork {
-
 class DialogService
 {
 public:
@@ -42,5 +40,3 @@ private:
     static std::vector<DatabaseService::Message> get_page(const std::vector<DatabaseService::Message>& dialog, size_t offset, size_t limit);
     static std::string serialize_messages(const std::vector<DatabaseService::Message>& dialog);
 };
-
-} // namespace SocialNetwork

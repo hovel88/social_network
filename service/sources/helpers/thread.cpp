@@ -2,8 +2,6 @@
 #include <signal.h>
 #include "helpers/thread.h"
 
-namespace SocialNetwork {
-
 namespace ThreadHelpers {
 
 void block_signals()
@@ -89,5 +87,3 @@ std::string get_name(pthread_t th)
 }
 
 } // namespace ThreadHelpers
-
-} // namespace SocialNetwork

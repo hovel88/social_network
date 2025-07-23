@@ -5,8 +5,6 @@
 #include "app_user_service.h"
 #include "app_auth_service.h"
 
-namespace SocialNetwork {
-
 void UserService::register_endpoints(httplib::Server* server)
 {
     if (!server) return;
@@ -339,5 +337,3 @@ std::string UserService::serialize_user(const DatabaseService::User& user)
                         {"city",        user.city}};
     return j.dump();
 }
-
-} // namespace SocialNetwork

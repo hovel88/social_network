@@ -11,8 +11,6 @@
 #include <pqxx/pqxx>
 #include "logger/logger.h"
 
-namespace SocialNetwork {
-
 class ConnectionPool
 {
 public:
@@ -136,5 +134,3 @@ struct ScopedConnection
         conn      = std::move(std::get<3>(tntc));
     }
 };
-
-} // namespace SocialNetwork

@@ -8,8 +8,6 @@
 #include "helpers/thread.h"
 #include "app.h"
 
-namespace SocialNetwork {
-
 static void set_options_(socket_t sock)
 {
     httplib::detail::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1);
@@ -330,5 +328,3 @@ void App::log_handler(const httplib::Request& req, const httplib::Response& res)
                                     /*http_referer=*/"-",
                                     http_user_agent));
 }
-
-} // namespace SocialNetwork

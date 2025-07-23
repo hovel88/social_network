@@ -6,8 +6,6 @@
 #include <utility>
 #include <stdint.h>
 
-namespace SocialNetwork {
-
 namespace FsHelpers {
 
 class FilePath;
@@ -132,5 +130,3 @@ inline void swap(Url& u1, Url& u2) noexcept
 }
 
 } // namespace UrlHelpers
-
-} // namespace SocialNetwork

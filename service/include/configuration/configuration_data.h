@@ -6,8 +6,6 @@
 #include <string>
 #include <unordered_map>
 
-namespace SocialNetwork {
-
 namespace config_max {
 
     extern const int http_threads_count;
@@ -70,5 +68,3 @@ namespace config_data {
         std::list<std::string> validate();
     };
 } // namespace config_data
-
-} // namespace SocialNetwork

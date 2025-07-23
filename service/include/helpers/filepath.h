@@ -4,8 +4,6 @@
 #include <optional>
 #include <vector>
 
-namespace SocialNetwork {
-
 namespace FsHelpers {
 
 class FilePath
@@ -99,5 +97,3 @@ inline void swap(FilePath& f1, FilePath& f2) noexcept
 }
 
 } // namespace FsHelpers
-
-} // namespace SocialNetwork

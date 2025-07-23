@@ -7,8 +7,6 @@
 #include "app_cache_service.h"
 #include "app_auth_service.h"
 
-namespace SocialNetwork {
-
 class FriendService
 {
 public:
@@ -43,5 +41,3 @@ private:
     bool friend_set_id_handler(const httplib::Request& req, httplib::Response& res);
     bool friend_delete_id_handler(const httplib::Request& req, httplib::Response& res);
 };
-
-} // namespace SocialNetwork

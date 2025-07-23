@@ -2,8 +2,6 @@
 
 #include "logger/logger_base.h"
 
-namespace SocialNetwork {
-
 namespace Logging {
 
 //
@@ -37,5 +35,3 @@ protected:
 };
 
 } // namespace Logging
-
-} // namespace SocialNetwork

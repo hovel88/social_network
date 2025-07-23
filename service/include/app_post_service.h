@@ -8,8 +8,6 @@
 #include "app_cache_service.h"
 #include "app_auth_service.h"
 
-namespace SocialNetwork {
-
 class PostService
 {
 public:
@@ -51,5 +49,3 @@ private:
     static std::string serialize_posts(const std::vector<DatabaseService::Post>& posts);
     static std::string serialize_post(const DatabaseService::Post& post);
 };
-
-} // namespace SocialNetwork

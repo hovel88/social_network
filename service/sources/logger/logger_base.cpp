@@ -1,8 +1,6 @@
 #include "logger/logger_base.h"
 #include "logger/logger_factory.h"
 
-namespace SocialNetwork {
-
 void Logging::Logger::log(const std::string_view /*message*/, const LogLevel /*level*/)
 {
 }
@@ -47,5 +45,3 @@ bool null_logger_registered = register_logger("null", [](const LoggerConfig& con
 });
 
 } // namespace Logging
-
-} // namespace SocialNetwork

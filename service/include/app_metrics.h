@@ -7,8 +7,6 @@
 #include <prometheus/exposer.h>
 #include <prometheus/registry.h>
 
-namespace SocialNetwork {
-
 class Metrics {
 public:
     Metrics(const std::set<std::string>& tags)
@@ -188,5 +186,3 @@ private:
     prometheus::Histogram* latency_requests_dialog_send_{nullptr};
     prometheus::Histogram* latency_requests_dialog_list_{nullptr};
 };
-
-} // namespace SocialNetwork

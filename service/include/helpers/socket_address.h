@@ -8,8 +8,6 @@
 #include <arpa/inet.h>
 #include <sys/un.h>
 
-namespace SocialNetwork {
-
 namespace NetHelpers {
 
 class IpAddress;
@@ -90,5 +88,3 @@ inline void swap(SocketAddress& sa1, SocketAddress& sa2) noexcept
 }
 
 } // namespace NetHelpers
-
-} // namespace SocialNetwork

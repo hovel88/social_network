@@ -8,8 +8,6 @@
 #include "helpers/dns_address.h"
 #include "helpers/socket_address.h"
 
-namespace SocialNetwork {
-
 namespace NetHelpers {
 
 SocketAddress::SocketAddress(const std::string& addr)
@@ -400,5 +398,3 @@ void SocketAddress::split_to_host_and_port(const std::string& addr, std::string&
 }
 
 } // namespace NetHelpers
-
-} // namespace SocialNetwork

@@ -3,8 +3,6 @@
 #include <nlohmann/json.hpp>
 #include "app_dialog_service.h"
 
-namespace SocialNetwork {
-
 void DialogService::register_endpoints(httplib::Server* server)
 {
     if (!server) return;
@@ -191,5 +189,3 @@ std::string DialogService::serialize_messages(const std::vector<DatabaseService:
     }
     return j.dump();
 }
-
-} // namespace SocialNetwork

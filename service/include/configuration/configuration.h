@@ -4,8 +4,6 @@
 #include "configuration/configuration_data.h"
 #include "logger/logger.h"
 
-namespace SocialNetwork {
-
 std::shared_ptr<cxxopts::ParseResult> configure_cli_options(int argc, char** argv);
 
 
@@ -37,5 +35,3 @@ private:
 
     void apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts);
 };
-
-} // namespace SocialNetwork

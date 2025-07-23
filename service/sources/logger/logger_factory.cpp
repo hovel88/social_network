@@ -1,8 +1,6 @@
 #include "logger/logger_factory.h"
 #include "logger/logger_base.h"
 
-namespace SocialNetwork {
-
 std::shared_ptr<Logging::Logger> Logging::LoggerFactory::produce(const LoggerConfig& config) const
 {
     auto type = config.find("type");
@@ -30,5 +28,3 @@ bool Logging::register_logger(const std::string_view name, LoggerCreator functio
 {
     return get_single_factory().emplace(name, function_ptr).second;
 }
-
-} // namespace SocialNetwork

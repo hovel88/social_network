@@ -7,8 +7,6 @@
 #include <stdexcept>
 #include <netdb.h>
 
-namespace SocialNetwork {
-
 namespace NetHelpers {
 
 class IpAddress;
@@ -97,5 +95,3 @@ public:
 };
 
 } // namespace NetHelpers
-
-} // namespace SocialNetwork

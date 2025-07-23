@@ -8,8 +8,6 @@
 #include <lru_cache_policy.hpp>
 #include "app_database_service.h"
 
-namespace SocialNetwork {
-
 // alias for an easy class typing
 template <typename Key, typename Value>
 using lru_cache_t = typename caches::fixed_sized_cache<Key, Value, caches::LRUCachePolicy>;
@@ -89,5 +87,3 @@ private:
     lru_cache_t<std::string, CacheItem> cache_;
     const std::chrono::seconds          ttl_{};
 };
-
-} // namespace SocialNetwork

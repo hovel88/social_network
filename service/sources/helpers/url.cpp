@@ -9,8 +9,6 @@
 #include "helpers/number_parser.h"
 #include "helpers/filepath.h"
 
-namespace SocialNetwork {
-
 namespace UrlHelpers {
 
 const std::string Url::URL_RESERVED_PATH        = "?#";
@@ -754,5 +752,3 @@ void Url::build_path(const std::vector<std::string>& segments, bool leading_slas
 }
 
 } // namespace UrlHelpers
-
-} // namespace SocialNetwork

@@ -4,8 +4,6 @@
 #include "logger/logger_file.h"
 #include "logger/logger_factory.h"
 
-namespace SocialNetwork {
-
 const std::string Logging::LoggerFile::def_file_name{"app.log"};
 
 Logging::LoggerFile::~LoggerFile()
@@ -124,5 +122,3 @@ bool file_logger_registered = register_logger("file", [](const LoggerConfig& con
 });
 
 } // namespace Logging
-
-} // namespace SocialNetwork

@@ -2,8 +2,6 @@
 #include "logger/logger_stdout.h"
 #include "logger/logger_factory.h"
 
-namespace SocialNetwork {
-
 void Logging::LoggerStdOut::log(const std::string_view message, const LogLevel level)
 {
     log(message, levels_.find(level)->second);
@@ -34,5 +32,3 @@ bool stdout_logger_registered = register_logger("stdout", [](const LoggerConfig&
 });
 
 } // namespace Logging
-
-} // namespace SocialNetwork

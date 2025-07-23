@@ -6,8 +6,6 @@
 #include "app_metrics.h"
 #include "app_database_service.h"
 
-namespace SocialNetwork {
-
 class AuthService
 {
 public:
@@ -38,5 +36,3 @@ private:
     std::shared_ptr<Metrics>         metrics_{nullptr};
     std::shared_ptr<DatabaseService> db_{nullptr};
 };
-
-} // namespace SocialNetwork

@@ -13,8 +13,6 @@
 #include <any>
 #include "logger/logger.h"
 
-namespace SocialNetwork {
-
 namespace ThreadHelpers {
 
 class PooledTask
@@ -147,5 +145,3 @@ private:
 };
 
 } // namespace ThreadHelpers
-
-} // namespace SocialNetwork

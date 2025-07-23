@@ -6,8 +6,6 @@
 #include "helpers/socket_address.h"
 #include "configuration/configuration_data.h"
 
-namespace SocialNetwork {
-
 const std::string config_def::pgsql_url{"postgresql://localhost:5432/postgres"};
 const std::string config_def::pgsql_database{"postgres"};
 const std::string config_def::pgsql_login{"postgres"};
@@ -229,5 +227,3 @@ std::list<std::string> config_data::config_s::validate()
 
     return errors;
 }
-
-} // namespace SocialNetwork

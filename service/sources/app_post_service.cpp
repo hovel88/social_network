@@ -4,8 +4,6 @@
 #include "app_post_service.h"
 #include "helpers/number_parser.h"
 
-namespace SocialNetwork {
-
 static std::string time_point_to_format_str_(const std::chrono::system_clock::time_point& p)
 {
     std::time_t t = std::chrono::system_clock::to_time_t(p);
@@ -465,5 +463,3 @@ std::string PostService::serialize_post(const DatabaseService::Post& post)
                         {"text",            post.text}};
     return j.dump();
 }
-
-} // namespace SocialNetwork

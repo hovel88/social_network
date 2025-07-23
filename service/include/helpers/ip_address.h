@@ -6,8 +6,6 @@
 #include <optional>
 #include <arpa/inet.h>
 
-namespace SocialNetwork {
-
 namespace NetHelpers {
 
 class IpAddress
@@ -126,5 +124,3 @@ inline void swap(IpAddress& ip1, IpAddress& ip2) noexcept
 }
 
 } // namespace NetHelpers
-
-} // namespace SocialNetwork

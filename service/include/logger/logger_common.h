@@ -5,8 +5,6 @@
 #include <string_view>
 #include <unordered_map>
 
-namespace SocialNetwork {
-
 namespace Logging {
 
 class Logger;
@@ -72,5 +70,3 @@ static const std::unordered_map<LogLevel, std::string, LogLevelHasher> colored{
 };
 
 } // namespace Logging
-
-} // namespace SocialNetwork

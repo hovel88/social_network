@@ -8,8 +8,6 @@
 #include <netinet/in.h>
 #include "helpers/environment.h"
 
-namespace SocialNetwork {
-
 namespace EnvironmentHelpers {
 
 bool has(const std::string& name)
@@ -134,5 +132,3 @@ int processor_count()
 }
 
 } // namespace EnvironmentHelpers
-
-} // namespace SocialNetwork

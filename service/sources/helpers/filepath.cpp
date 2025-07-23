@@ -10,8 +10,6 @@
 #include <sys/stat.h>
 #include "helpers/filepath.h"
 
-namespace SocialNetwork {
-
 namespace FsHelpers {
 
 FilePath::FilePath(const char* path)
@@ -854,5 +852,3 @@ void FilePath::set_path(const std::string& path)
 }
 
 } // namespace FsHelpers
-
-} // namespace SocialNetwork

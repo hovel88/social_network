@@ -6,8 +6,6 @@
 #include "app_metrics.h"
 #include "app_connection_pool.h"
 
-namespace SocialNetwork {
-
 class DatabaseService
 {
 public:
@@ -109,5 +107,3 @@ private:
 
     static std::string calculate_dialog_shard_key(const std::string& from_id, const std::string& to_id);
 };
-
-} // namespace SocialNetwork

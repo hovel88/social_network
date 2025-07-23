@@ -5,8 +5,6 @@
 #include "app_metrics.h"
 #include "app_database_service.h"
 
-namespace SocialNetwork {
-
 class UserService
 {
 public:
@@ -40,5 +38,3 @@ private:
     static std::string serialize_users(const std::vector<DatabaseService::User>& users);
     static std::string serialize_user(const DatabaseService::User& user);
 };
-
-} // namespace SocialNetwork

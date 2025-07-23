@@ -2,8 +2,6 @@
 #include "helpers/thread.h"
 #include "helpers/thread_pool.h"
 
-namespace SocialNetwork {
-
 namespace ThreadHelpers {
 
 ThreadPool::~ThreadPool()
@@ -76,5 +74,3 @@ void ThreadPool::run(const std::string thread_name)
 }
 
 } // namespace ThreadHelpers
-
-} // namespace SocialNetwork

@@ -3,8 +3,6 @@
 #include <string>
 #include <optional>
 
-namespace SocialNetwork {
-
 namespace EnvironmentHelpers {
 
 bool has(const std::string& name);
@@ -22,5 +20,3 @@ std::string node_name();
 int processor_count();
 
 } // namespace EnvironmentHelpers
-
-} // namespace SocialNetwork

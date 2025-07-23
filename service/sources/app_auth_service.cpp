@@ -2,8 +2,6 @@
 #include "app_auth_service.h"
 #include "helpers/string.h"
 
-namespace SocialNetwork {
-
 bool AuthService::authenticate(const httplib::Request& req, std::string& user_id)
 {
     auto auth_header = req.get_header_value("Authorization");
@@ -38,5 +36,3 @@ bool AuthService::authenticate(const httplib::Request& req, std::string& user_id
     }
     return false;
 }
-
-} // namespace SocialNetwork

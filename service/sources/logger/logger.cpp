@@ -1,8 +1,6 @@
 #include "logger/logger.h"
 #include "logger/logger_factory.h"
 
-namespace SocialNetwork {
-
 namespace Logging {
 
 extern bool null_logger_registered;
@@ -30,5 +28,3 @@ std::shared_ptr<Logging::Logger> Logging::configure_logger(const LoggerConfig& c
     std::call_once(flag, registration_);
     return get_single_factory().produce(config);
 }
-
-} // namespace SocialNetwork

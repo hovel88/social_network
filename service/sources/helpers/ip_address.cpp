@@ -7,8 +7,6 @@
 #include "helpers/string.h"
 #include "helpers/ip_address.h"
 
-namespace SocialNetwork {
-
 namespace NetHelpers {
 
 IpAddress::IpAddress()
@@ -869,5 +867,3 @@ std::string IpAddress::trim_v6_string(const std::string& addr)
 }
 
 } // namespace NetHelpers
-
-} // namespace SocialNetwork

@@ -5,8 +5,6 @@
 #include "helpers/number_parser.h"
 #include "configuration/configuration.h"
 
-namespace SocialNetwork {
-
 std::shared_ptr<cxxopts::ParseResult> configure_cli_options(int argc, char** argv)
 {
     auto prog_name = std::filesystem::path(std::string(argv[0])).filename().string();
@@ -267,5 +265,3 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
         LOG_ERROR(err);
     }
 }
-
-} // namespace SocialNetwork

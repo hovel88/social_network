@@ -7,8 +7,6 @@
 #include <stdexcept>
 #include "helpers/number_parser.h"
 
-namespace SocialNetwork {
-
 namespace NumberParserHelpers {
 
 std::optional<bool> parse_bool(const std::string& s)
@@ -229,5 +227,3 @@ bool try_parse_int64(const std::string& s, int64_t& value)
 }
 
 } // namespace NumberParserHelpers
-
-} // namespace SocialNetwork

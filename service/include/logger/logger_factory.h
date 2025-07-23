@@ -2,8 +2,6 @@
 
 #include "logger/logger_common.h"
 
-namespace SocialNetwork {
-
 namespace Logging {
 
 //
@@ -26,5 +24,3 @@ LoggerFactory& get_single_factory();
 bool register_logger(const std::string_view name, LoggerCreator function_ptr);
 
 } // namespace Logging
-
-} // namespace SocialNetwork

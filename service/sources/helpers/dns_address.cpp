@@ -9,8 +9,6 @@
 #include "helpers/socket_address.h"
 #include "helpers/dns_address.h"
 
-namespace SocialNetwork {
-
 namespace NetHelpers {
 
 template <typename T>
@@ -250,5 +248,3 @@ void Dns::reload()
 }
 
 } // namespace NetHelpers
-
-} // namespace SocialNetwork

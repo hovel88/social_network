@@ -8,8 +8,6 @@
 #include <iostream>
 #include "logger/logger_common.h"
 
-namespace SocialNetwork {
-
 namespace Logging {
 
 //
@@ -46,5 +44,3 @@ protected:
 };
 
 } // namespace Logging
-
-} // namespace SocialNetwork
