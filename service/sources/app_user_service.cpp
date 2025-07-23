@@ -9,7 +9,7 @@ void UserService::register_endpoints(httplib::Server* server)
 {
     if (!server) return;
     server->Post("/login", [this](const auto& req, auto& res) {
-        LOG_DEBUG("handler: POST /login");
+        LOGGER_DEBUG("handler: POST /login");
         auto start = std::chrono::steady_clock::now();
         bool ok    = login_handler(req, res);
         auto end   = std::chrono::steady_clock::now();
@@ -18,7 +18,7 @@ void UserService::register_endpoints(httplib::Server* server)
         if (ok)  metrics_->store_latency_request_login(std::chrono::duration<double>(end - start).count());
     })
     .Post("/user/register", [this](const auto& req, auto& res) {
-        LOG_DEBUG("handler: POST /user/register");
+        LOGGER_DEBUG("handler: POST /user/register");
         auto start = std::chrono::steady_clock::now();
         bool ok    = user_register_handler(req, res);
         auto end   = std::chrono::steady_clock::now();
@@ -27,7 +27,7 @@ void UserService::register_endpoints(httplib::Server* server)
         if (ok)  metrics_->store_latency_request_user_register(std::chrono::duration<double>(end - start).count());
     })
     .Get("/user/get/:id", [this](const auto& req, auto& res) {
-        LOG_DEBUG("handler: GET /user/get/:id");
+        LOGGER_DEBUG("handler: GET /user/get/:id");
         auto start = std::chrono::steady_clock::now();
         bool ok    = user_get_id_handler(req, res);
         auto end   = std::chrono::steady_clock::now();
@@ -36,7 +36,7 @@ void UserService::register_endpoints(httplib::Server* server)
         if (ok)  metrics_->store_latency_request_user_get_id(std::chrono::duration<double>(end - start).count());
     })
     .Get("/user/search", [this](const auto& req, auto& res) {
-        LOG_DEBUG("handler: GET /user/search");
+        LOGGER_DEBUG("handler: GET /user/search");
         auto start = std::chrono::steady_clock::now();
         bool ok    = user_search_handler(req, res);
         auto end   = std::chrono::steady_clock::now();
@@ -44,7 +44,7 @@ void UserService::register_endpoints(httplib::Server* server)
         if (!ok) metrics_->count_failed_request_user_search();
         if (ok)  metrics_->store_latency_request_user_search(std::chrono::duration<double>(end - start).count());
     });
-    LOG_INFOR("endpoints registered: POST /login -- POST /user/register -- GET /user/get/:id -- GET /user/search");
+    LOGGER_INFOR("endpoints registered: POST /login -- POST /user/register -- GET /user/get/:id -- GET /user/search");
 }
 
 bool UserService::pre_routing_validation(const httplib::Request& req)
@@ -64,27 +64,27 @@ bool UserService::login_handler(const httplib::Request& req, httplib::Response& 
 
     if (!body.contains("id")
     ||  !body.contains("password")) {
-        LOG_ERROR(std::format("login_handler: request params does not contain 'id' and/or 'password'"));
+        LOGGER_ERROR(std::format("login_handler: request params does not contain 'id' and/or 'password'"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!body["id"].is_string()
     ||  !body["password"].is_string()) {
-        LOG_ERROR(std::format("login_handler: request params 'id' and 'password' should be a string"));
+        LOGGER_ERROR(std::format("login_handler: request params 'id' and 'password' should be a string"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!AuthService::is_valid_uuid(body["id"].get<std::string>())) {
-        LOG_ERROR(std::format("login_handler: request param 'id' is not an UUID format"));
+        LOGGER_ERROR(std::format("login_handler: request param 'id' is not an UUID format"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!db_) {
         auto err = std::format("login_handler: database service is unavailable");
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::ServiceUnavailable_503;
@@ -115,7 +115,7 @@ bool UserService::login_handler(const httplib::Request& req, httplib::Response& 
     }
 
     if (!err.empty()) {
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::InternalServerError_500;
@@ -133,7 +133,7 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
     ||  !body.contains("birthdate")
     ||  !body.contains("biography")
     ||  !body.contains("city")) {
-        LOG_ERROR(std::format("user_register_handler: request params does not contain 'password', 'first_name', 'second_name', 'birthdate', 'biography' and/or 'city'"));
+        LOGGER_ERROR(std::format("user_register_handler: request params does not contain 'password', 'first_name', 'second_name', 'birthdate', 'biography' and/or 'city'"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
@@ -144,14 +144,14 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
     ||  !body["birthdate"].is_string()
     ||  !body["biography"].is_string()
     ||  !body["city"].is_string()) {
-        LOG_ERROR(std::format("user_register_handler: request params 'password', 'first_name', 'second_name', 'birthdate', 'biography' and 'city' should be a string"));
+        LOGGER_ERROR(std::format("user_register_handler: request params 'password', 'first_name', 'second_name', 'birthdate', 'biography' and 'city' should be a string"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (body["password"].get<std::string>().length() < 8) {
         // минимальная длина 8 символов
-        LOG_ERROR(std::format("user_register_handler: request param 'password' should contain at least 8 characters"));
+        LOGGER_ERROR(std::format("user_register_handler: request param 'password' should contain at least 8 characters"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
@@ -162,7 +162,7 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
         ss >> std::get_time(&t, "%Y-%m-%d"); // 2017-02-01
         if (ss.fail() || t.tm_year < 0 || t.tm_year > 107) {
             // 18лет (с 2007 г.д.), 2007 - 1900 = 107
-            LOG_ERROR(std::format("user_register_handler: request param 'birthdate' is invalid"));
+            LOGGER_ERROR(std::format("user_register_handler: request param 'birthdate' is invalid"));
             res.status = httplib::StatusCode::BadRequest_400;
             return false;
         }
@@ -170,7 +170,7 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
 
     if (!db_) {
         auto err = std::format("user_register_handler: database service is unavailable");
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::ServiceUnavailable_503;
@@ -204,7 +204,7 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
     }
 
     if (!err.empty()) {
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::InternalServerError_500;
@@ -215,20 +215,20 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
 bool UserService::user_get_id_handler(const httplib::Request& req, httplib::Response& res)
 {
     if (!req.path_params.contains("id")) {
-        LOG_ERROR(std::format("user_get_id_handler: request params does not contain 'id'"));
+        LOGGER_ERROR(std::format("user_get_id_handler: request params does not contain 'id'"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!AuthService::is_valid_uuid(req.path_params.at("id"))) {
-        LOG_ERROR(std::format("user_get_id_handler: request param 'id' is not an UUID format"));
+        LOGGER_ERROR(std::format("user_get_id_handler: request param 'id' is not an UUID format"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!db_) {
         auto err = std::format("user_get_id_handler: database service is unavailable");
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::ServiceUnavailable_503;
@@ -258,7 +258,7 @@ bool UserService::user_get_id_handler(const httplib::Request& req, httplib::Resp
     }
 
     if (!err.empty()) {
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::InternalServerError_500;
@@ -270,14 +270,14 @@ bool UserService::user_search_handler(const httplib::Request& req, httplib::Resp
 {
     if (!req.has_param("first_name")
     ||  !req.has_param("last_name")) {
-        LOG_ERROR(std::format("user_search_handler: request params does not contain 'first_name' and/or 'last_name'"));
+        LOGGER_ERROR(std::format("user_search_handler: request params does not contain 'first_name' and/or 'last_name'"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!db_) {
         auto err = std::format("user_search_handler: database service is unavailable");
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::ServiceUnavailable_503;
@@ -301,7 +301,7 @@ bool UserService::user_search_handler(const httplib::Request& req, httplib::Resp
     }
 
     if (!err.empty()) {
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::InternalServerError_500;

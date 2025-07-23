@@ -7,18 +7,19 @@ namespace Logging {
 std::shared_ptr<Logger> configure_logger(const LoggerConfig& config = default_stdout_colored_config);
 
 // можно обращаться к методам logger напрямую из указателя, либо применять
-// макросы: LOG_ERROR, LOG_WARNG, LOG_INFOR, LOG_DEBUG, LOG_TRACE
+// макросы: LOGGER_ERROR, LOGGER_WARNG, LOGGER_INFOR, LOGGER_DEBUG, LOGGER_TRACE
 // в случае макросов, можно будет использовать условия препроцессора,
 // например, чтобы полностью исключить из компиляции лог определенных уровней
 
 // можно на этапе компиляции задать уровень логирования, который вообще возможен,
 // все уровни выше - даже не будут присутствовать в коде, ускоряя работу.
 // для этого во флагах компиляции надо перечислить какие логи нужно оставить:
-//      LOGGING_LEVEL_ENABLE_ERROR -- при компиляции оставить логи, помеченные как LOG_ERROR 1
-//      LOGGING_LEVEL_ENABLE_WARNG -- при компиляции оставить логи, помеченные как LOG_WARNG 2
-//      LOGGING_LEVEL_ENABLE_INFOR -- при компиляции оставить логи, помеченные как LOG_INFOR 3
-//      LOGGING_LEVEL_ENABLE_DEBUG -- при компиляции оставить логи, помеченные как LOG_DEBUG 4
-//      LOGGING_LEVEL_ENABLE_TRACE -- при компиляции оставить логи, помеченные как LOG_TRACE 5
+//      LOGGING_LEVEL_ENABLE_ALERT -- при компиляции оставить логи, помеченные как LOGGER_ALERT 0
+//      LOGGING_LEVEL_ENABLE_ERROR -- при компиляции оставить логи, помеченные как LOGGER_ERROR 1
+//      LOGGING_LEVEL_ENABLE_WARNG -- при компиляции оставить логи, помеченные как LOGGER_WARNG 2
+//      LOGGING_LEVEL_ENABLE_INFOR -- при компиляции оставить логи, помеченные как LOGGER_INFOR 3
+//      LOGGING_LEVEL_ENABLE_DEBUG -- при компиляции оставить логи, помеченные как LOGGER_DEBUG 4
+//      LOGGING_LEVEL_ENABLE_TRACE -- при компиляции оставить логи, помеченные как LOGGER_TRACE 5
 // либо указать одну из опций:
 //      LOGGING_LEVEL_ENABLE_NONE  -- при компиляции убрать весь лог из кода
 //      LOGGING_LEVEL_ENABLE_ALL   -- при компиляции оставить весь возможный лог в коде
@@ -64,7 +65,7 @@ constexpr const char* _file_name_(const char* path) {
     #define LOGMSG_ALERT(msg) if (logger_ && logger_->available(Logging::LogLevel::LogAlert)) logger_->log(msg, Logging::LogLevel::LogAlert)
     #define LOGLNG_ALERT(msg) LOGMSG_ALERT((LOGGING_LN_PREFIX + msg))
 #endif
-#define LOG_ALERT(msg) LOGLNG_ALERT(msg)
+#define LOGGER_ALERT(msg) LOGLNG_ALERT(msg)
 
 #ifndef LOGGING_LEVEL_ENABLE_ERROR
     #define LOGMSG_ERROR(msg)
@@ -73,7 +74,7 @@ constexpr const char* _file_name_(const char* path) {
     #define LOGMSG_ERROR(msg) if (logger_ && logger_->available(Logging::LogLevel::LogError)) logger_->log(msg, Logging::LogLevel::LogError)
     #define LOGLNG_ERROR(msg) LOGMSG_ERROR((LOGGING_LN_PREFIX + msg))
 #endif
-#define LOG_ERROR(msg) LOGLNG_ERROR(msg)
+#define LOGGER_ERROR(msg) LOGLNG_ERROR(msg)
 
 #ifndef LOGGING_LEVEL_ENABLE_WARNG
     #define LOGMSG_WARNG(msg)
@@ -82,7 +83,7 @@ constexpr const char* _file_name_(const char* path) {
     #define LOGMSG_WARNG(msg) if (logger_ && logger_->available(Logging::LogLevel::LogWarng)) logger_->log(msg, Logging::LogLevel::LogWarng)
     #define LOGLNG_WARNG(msg) LOGMSG_WARNG((LOGGING_LN_PREFIX + msg))
 #endif
-#define LOG_WARNG(msg) LOGLNG_WARNG(msg)
+#define LOGGER_WARNG(msg) LOGLNG_WARNG(msg)
 
 #ifndef LOGGING_LEVEL_ENABLE_INFOR
     #define LOGMSG_INFOR(msg)
@@ -91,7 +92,7 @@ constexpr const char* _file_name_(const char* path) {
     #define LOGMSG_INFOR(msg) if (logger_ && logger_->available(Logging::LogLevel::LogInfor)) logger_->log(msg, Logging::LogLevel::LogInfor)
     #define LOGLNG_INFOR(msg) LOGMSG_INFOR((LOGGING_LN_PREFIX + msg))
 #endif
-#define LOG_INFOR(msg) LOGLNG_INFOR(msg)
+#define LOGGER_INFOR(msg) LOGLNG_INFOR(msg)
 
 #ifndef LOGGING_LEVEL_ENABLE_DEBUG
     #define LOGMSG_DEBUG(msg)
@@ -100,7 +101,7 @@ constexpr const char* _file_name_(const char* path) {
     #define LOGMSG_DEBUG(msg) if (logger_ && logger_->available(Logging::LogLevel::LogDebug)) logger_->log(msg, Logging::LogLevel::LogDebug)
     #define LOGLNG_DEBUG(msg) LOGMSG_DEBUG((LOGGING_LN_PREFIX + msg))
 #endif
-#define LOG_DEBUG(msg) LOGLNG_DEBUG(msg)
+#define LOGGER_DEBUG(msg) LOGLNG_DEBUG(msg)
 
 #ifndef LOGGING_LEVEL_ENABLE_TRACE
     #define LOGMSG_TRACE(msg)
@@ -109,6 +110,6 @@ constexpr const char* _file_name_(const char* path) {
     #define LOGMSG_TRACE(msg) if (logger_ && logger_->available(Logging::LogLevel::LogTrace)) logger_->log(msg, Logging::LogLevel::LogTrace)
     #define LOGLNG_TRACE(msg) LOGMSG_TRACE((LOGGING_LN_PREFIX + msg))
 #endif
-#define LOG_TRACE(msg) LOGLNG_TRACE(msg)
+#define LOGGER_TRACE(msg) LOGLNG_TRACE(msg)
 
 } // namespace Logging

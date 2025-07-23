@@ -59,7 +59,7 @@ App::App(std::shared_ptr<cxxopts::ParseResult> cli_opts)
 
 void App::run()
 {
-    LOG_INFOR(std::format("running..."));
+    LOGGER_INFOR(std::format("running..."));
 
     try {
         conf_->show_configuration();
@@ -87,7 +87,7 @@ void App::run()
         }
     }
     catch (std::exception& ex) {
-        LOG_ERROR(std::format("App::run() exception: {}",
+        LOGGER_ERROR(std::format("App::run() exception: {}",
             ex.what()));
     }
 }
@@ -137,7 +137,7 @@ void App::db_start()
             db_client_started = true;
         }
     } catch (std::exception& ex) {
-        LOG_ERROR(std::format("db_start exception: {}", ex.what()));
+        LOGGER_ERROR(std::format("db_start exception: {}", ex.what()));
     }
 }
 
@@ -161,7 +161,7 @@ void App::http_start()
         NetHelpers::SocketAddress sock_addr(conf_->config().http_listening);
         http_server_->bind_to_port(sock_addr.host().to_string(), sock_addr.port());
 
-        LOG_INFOR(std::format("{} socket was configured into listening state: {}",
+        LOGGER_INFOR(std::format("{} socket was configured into listening state: {}",
             http_server_thread_name, sock_addr.to_string()));
 
         // устанавливаем наш ThreadPool для обработки очереди запросов
@@ -219,7 +219,7 @@ void App::http_start()
         ThreadHelpers::set_name(http_server_thread_.native_handle(), http_server_thread_name);
     }
     catch (std::exception& ex) {
-        LOG_ERROR(std::format("{} exception: {}", http_server_thread_name, ex.what()));
+        LOGGER_ERROR(std::format("{} exception: {}", http_server_thread_name, ex.what()));
     }
 }
 
@@ -319,7 +319,7 @@ void App::log_handler(const httplib::Request& req, const httplib::Response& res)
 
     constexpr auto log_html = R"({} - {} [{}] "{}" {} {} "{}" "{}")";
     // 127.0.0.1 - - [08/Apr/2025:12:07:01 +0000] "GET /livez HTTP/1.1" 200 3 "-" "curl/8.12.1"
-    LOG_TRACE(std::format(log_html, req.remote_addr,
+    LOGGER_TRACE(std::format(log_html, req.remote_addr,
                                     /*remote_user=*/"-",
                                     time_local_str_(),
                                     request,

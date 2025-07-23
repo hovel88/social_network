@@ -79,15 +79,15 @@ for (int i = 0; const auto& replica : current_configuration_.pgsql_replica) {
     ss << "\n  http.threads_count="     << current_configuration_.http_threads_count;
     ss << "\n  http.queue_capacity="    << current_configuration_.http_queue_capacity;
     ss << "\n  prometheus.listening="   << current_configuration_.prometheus_listening;
-    LOG_DEBUG(ss.str());
+    LOGGER_DEBUG(ss.str());
 }
 
 void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
 {
     current_configuration_.init();
-    LOG_INFOR(std::format("configuration was initialized with default values"));
+    LOGGER_INFOR(std::format("configuration was initialized with default values"));
 
-    LOG_INFOR(std::format("trying to read configuration from environment"));
+    LOGGER_INFOR(std::format("trying to read configuration from environment"));
 
     {
         const std::string key("PGSQL_MASTER_URL");
@@ -95,7 +95,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
             auto env = EnvironmentHelpers::get(key);
             auto val = StringHelpers::trim(env.value());
             current_configuration_.pgsql_master.url = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }
     {
@@ -105,7 +105,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
             auto val = StringHelpers::trim(env.value());
             current_configuration_.pgsql_replica.push_back({});
             current_configuration_.pgsql_replica.back().url = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }
     {
@@ -115,7 +115,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
             auto val = StringHelpers::trim(env.value());
             current_configuration_.pgsql_replica.push_back({});
             current_configuration_.pgsql_replica.back().url = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }
     {
@@ -125,7 +125,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
             auto val = StringHelpers::trim(env.value());
             current_configuration_.pgsql_replica.push_back({});
             current_configuration_.pgsql_replica.back().url = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }
     {
@@ -135,7 +135,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
             auto val = StringHelpers::trim(env.value());
             current_configuration_.pgsql_replica.push_back({});
             current_configuration_.pgsql_replica.back().url = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }
     {
@@ -145,7 +145,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
             auto val = StringHelpers::trim(env.value());
             current_configuration_.pgsql_replica.push_back({});
             current_configuration_.pgsql_replica.back().url = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }
 
@@ -155,7 +155,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
             auto env = EnvironmentHelpers::get(key);
             auto val = StringHelpers::trim(env.value());
             current_configuration_.http_listening = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }
     {
@@ -166,7 +166,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
             int val = 0;
             if (NumberParserHelpers::try_parse_int(str, val)) {
                 current_configuration_.http_queue_capacity = val;
-                LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+                LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
             }
         }
     }
@@ -178,7 +178,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
             int val = 0;
             if (NumberParserHelpers::try_parse_int(str, val)) {
                 current_configuration_.http_threads_count = val;
-                LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+                LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
             }
         }
     }
@@ -191,12 +191,12 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
             int val = 0;
             if (NumberParserHelpers::try_parse_int(str, val)) {
                 current_configuration_.prometheus_port = val;
-                LOG_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+                LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
             }
         }
     }
 
-    LOG_INFOR(std::format("trying to read configuration from command line options"));
+    LOGGER_INFOR(std::format("trying to read configuration from command line options"));
     const auto& cli = *cli_opts;
 
     try {
@@ -204,7 +204,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
         if (cli.count(key)) {
             auto val = cli[key].as<std::string>();
             current_configuration_.pgsql_master.url = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
         }
     }
     catch (...) {}
@@ -217,7 +217,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
                 current_configuration_.pgsql_replica.push_back({});
                 current_configuration_.pgsql_replica.back().url = v;
             }
-            LOG_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
         }
     }
     catch (...) {}
@@ -227,7 +227,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
         if (cli.count(key)) {
             auto val = cli[key].as<std::string>();
             current_configuration_.http_listening = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
         }
     }
     catch (...) {}
@@ -236,7 +236,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
         if (cli.count(key)) {
             auto val = cli[key].as<int>();
             current_configuration_.http_queue_capacity = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
         }
     }
     catch (...) {}
@@ -245,7 +245,7 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
         if (cli.count(key)) {
             auto val = cli[key].as<int>();
             current_configuration_.http_threads_count = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
         }
     }
     catch (...) {}
@@ -255,13 +255,13 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
         if (cli.count(key)) {
             auto val = cli[key].as<int>();
             current_configuration_.prometheus_port = val;
-            LOG_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by command line option '{}'", key));
         }
     }
     catch (...) {}
 
     auto errors = current_configuration_.validate();
     for (auto& err : errors) {
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
     }
 }

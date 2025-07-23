@@ -53,16 +53,16 @@ void ThreadPool::run(const std::string thread_name)
             tasks_.pop();
             lock.unlock();
 
-            LOG_TRACE(std::format("thread {}, start processing task #{}",
+            LOGGER_TRACE(std::format("thread {}, start processing task #{}",
                 thread_name, task.second.id_));
             try {
                 task.first();
             }
             catch (std::exception& ex) {
-                LOG_ERROR(std::format("thread {} while processing task #{}, exception: {}",
+                LOGGER_ERROR(std::format("thread {} while processing task #{}, exception: {}",
                     thread_name, task.second.id_, ex.what()));
             }
-            LOG_TRACE(std::format("thread {}, end processing task #{}",
+            LOGGER_TRACE(std::format("thread {}, end processing task #{}",
                 thread_name, task.second.id_));
 
             if (task.second.cb_) task.second.cb_(task.first.get_result());

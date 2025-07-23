@@ -24,7 +24,7 @@ void PostService::register_endpoints(httplib::Server* server)
 {
     if (!server) return;
     server->Get(R"(/post/get/([0-9a-fA-F-]{36}))", [this](const auto& req, auto& res) {
-        LOG_DEBUG("handler: GET /post/get/:id");
+        LOGGER_DEBUG("handler: GET /post/get/:id");
         auto start = std::chrono::steady_clock::now();
         bool ok    = post_get_id_handler(req, res);
         auto end   = std::chrono::steady_clock::now();
@@ -33,7 +33,7 @@ void PostService::register_endpoints(httplib::Server* server)
         if (ok)  metrics_->store_latency_request_post_get_id(std::chrono::duration<double>(end - start).count());
     })
     .Put(R"(/post/delete/([0-9a-fA-F-]{36}))", [this](const auto& req, auto& res) {
-        LOG_DEBUG("handler: PUT /post/delete/:id");
+        LOGGER_DEBUG("handler: PUT /post/delete/:id");
         auto start = std::chrono::steady_clock::now();
         bool ok    = post_delete_id_handler(req, res);
         auto end   = std::chrono::steady_clock::now();
@@ -42,7 +42,7 @@ void PostService::register_endpoints(httplib::Server* server)
         if (ok)  metrics_->store_latency_request_post_delete_id(std::chrono::duration<double>(end - start).count());
     })
     .Post("/post/create", [this](const auto& req, auto& res) {
-        LOG_DEBUG("handler: POST /post/create");
+        LOGGER_DEBUG("handler: POST /post/create");
         auto start = std::chrono::steady_clock::now();
         bool ok    = post_create_handler(req, res);
         auto end   = std::chrono::steady_clock::now();
@@ -51,7 +51,7 @@ void PostService::register_endpoints(httplib::Server* server)
         if (ok)  metrics_->store_latency_request_post_create(std::chrono::duration<double>(end - start).count());
     })
     .Put("/post/update", [this](const auto& req, auto& res) {
-        LOG_DEBUG("handler: PUT /post/update");
+        LOGGER_DEBUG("handler: PUT /post/update");
         auto start = std::chrono::steady_clock::now();
         bool ok    = post_update_handler(req, res);
         auto end   = std::chrono::steady_clock::now();
@@ -60,7 +60,7 @@ void PostService::register_endpoints(httplib::Server* server)
         if (ok)  metrics_->store_latency_request_post_update(std::chrono::duration<double>(end - start).count());
     })
     .Get("/post/feed", [this](const auto& req, auto& res) {
-        LOG_DEBUG("handler: GET /post/feed");
+        LOGGER_DEBUG("handler: GET /post/feed");
         auto start = std::chrono::steady_clock::now();
         bool ok    = post_feed_handler(req, res);
         auto end   = std::chrono::steady_clock::now();
@@ -68,7 +68,7 @@ void PostService::register_endpoints(httplib::Server* server)
         if (!ok) metrics_->count_failed_request_post_feed();
         if (ok)  metrics_->store_latency_request_post_feed(std::chrono::duration<double>(end - start).count());
     });
-    LOG_INFOR("endpoints registered: GET /post/get/:id -- PUT /post/delete/:id -- POST /post/create -- PUT /post/update -- GET /post/feed");
+    LOGGER_INFOR("endpoints registered: GET /post/get/:id -- PUT /post/delete/:id -- POST /post/create -- PUT /post/update -- GET /post/feed");
 }
 
 bool PostService::pre_routing_validation(const httplib::Request& req)
@@ -87,14 +87,14 @@ bool PostService::post_get_id_handler(const httplib::Request& req, httplib::Resp
 {
     const std::string requested_id = req.matches[1];
     if (!AuthService::is_valid_uuid(requested_id)) {
-        LOG_ERROR(std::format("post_get_id_handler: request param 'id' is not an UUID format"));
+        LOGGER_ERROR(std::format("post_get_id_handler: request param 'id' is not an UUID format"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!db_ || !auth_) {
         auto err = std::format("post_get_id_handler: database service and/or authentication service are unavailable");
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::ServiceUnavailable_503;
@@ -103,7 +103,7 @@ bool PostService::post_get_id_handler(const httplib::Request& req, httplib::Resp
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
-        LOG_ERROR(std::format("post_get_id_handler: request from unauthorized user"));
+        LOGGER_ERROR(std::format("post_get_id_handler: request from unauthorized user"));
         res.status = httplib::StatusCode::Unauthorized_401;
         return false;
     }
@@ -131,7 +131,7 @@ bool PostService::post_get_id_handler(const httplib::Request& req, httplib::Resp
     }
 
     if (!err.empty()) {
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::InternalServerError_500;
@@ -143,14 +143,14 @@ bool PostService::post_delete_id_handler(const httplib::Request& req, httplib::R
 {
     const std::string requested_id = req.matches[1];
     if (!AuthService::is_valid_uuid(requested_id)) {
-        LOG_ERROR(std::format("post_delete_id_handler: request param 'id' is not an UUID format"));
+        LOGGER_ERROR(std::format("post_delete_id_handler: request param 'id' is not an UUID format"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!db_ || !auth_) {
         auto err = std::format("post_delete_id_handler: database service and/or authentication service are unavailable");
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::ServiceUnavailable_503;
@@ -159,7 +159,7 @@ bool PostService::post_delete_id_handler(const httplib::Request& req, httplib::R
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
-        LOG_ERROR(std::format("post_delete_id_handler: request from unauthorized user"));
+        LOGGER_ERROR(std::format("post_delete_id_handler: request from unauthorized user"));
         res.status = httplib::StatusCode::Unauthorized_401;
         return false;
     }
@@ -189,7 +189,7 @@ bool PostService::post_delete_id_handler(const httplib::Request& req, httplib::R
     }
 
     if (!err.empty()) {
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::InternalServerError_500;
@@ -202,20 +202,20 @@ bool PostService::post_create_handler(const httplib::Request& req, httplib::Resp
     auto body = nlohmann::json::parse(req.body);
 
     if (!body.contains("text")) {
-        LOG_ERROR(std::format("post_create_handler: request params does not contain 'text'"));
+        LOGGER_ERROR(std::format("post_create_handler: request params does not contain 'text'"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!body["text"].is_string()) {
-        LOG_ERROR(std::format("post_create_handler: request params 'text' should be a string"));
+        LOGGER_ERROR(std::format("post_create_handler: request params 'text' should be a string"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!db_ || !auth_) {
         auto err = std::format("post_create_handler: database service and/or authentication service are unavailable");
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::ServiceUnavailable_503;
@@ -224,7 +224,7 @@ bool PostService::post_create_handler(const httplib::Request& req, httplib::Resp
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
-        LOG_ERROR(std::format("post_create_handler: request from unauthorized user"));
+        LOGGER_ERROR(std::format("post_create_handler: request from unauthorized user"));
         res.status = httplib::StatusCode::Unauthorized_401;
         return false;
     }
@@ -260,7 +260,7 @@ bool PostService::post_create_handler(const httplib::Request& req, httplib::Resp
     }
 
     if (!err.empty()) {
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::InternalServerError_500;
@@ -274,27 +274,27 @@ bool PostService::post_update_handler(const httplib::Request& req, httplib::Resp
 
     if (!body.contains("id")
     ||  !body.contains("text")) {
-        LOG_ERROR(std::format("post_update_handler: request params does not contain 'id' and/or 'text'"));
+        LOGGER_ERROR(std::format("post_update_handler: request params does not contain 'id' and/or 'text'"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!body["id"].is_string()
     ||  !body["text"].is_string()) {
-        LOG_ERROR(std::format("post_update_handler: request params 'id' and 'text' should be a string"));
+        LOGGER_ERROR(std::format("post_update_handler: request params 'id' and 'text' should be a string"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!AuthService::is_valid_uuid(body["id"].get<std::string>())) {
-        LOG_ERROR(std::format("post_update_handler: request param 'id' is not an UUID format"));
+        LOGGER_ERROR(std::format("post_update_handler: request param 'id' is not an UUID format"));
         res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!db_ || !auth_) {
         auto err = std::format("post_update_handler: database service and/or authentication service are unavailable");
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::ServiceUnavailable_503;
@@ -303,7 +303,7 @@ bool PostService::post_update_handler(const httplib::Request& req, httplib::Resp
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
-        LOG_ERROR(std::format("post_update_handler: request from unauthorized user"));
+        LOGGER_ERROR(std::format("post_update_handler: request from unauthorized user"));
         res.status = httplib::StatusCode::Unauthorized_401;
         return false;
     }
@@ -334,7 +334,7 @@ bool PostService::post_update_handler(const httplib::Request& req, httplib::Resp
     }
 
     if (!err.empty()) {
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::InternalServerError_500;
@@ -366,7 +366,7 @@ bool PostService::post_feed_handler(const httplib::Request& req, httplib::Respon
 
     if (!db_ || !auth_) {
         auto err = std::format("post_feed_handler: database service and/or authentication service are unavailable");
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::ServiceUnavailable_503;
@@ -375,7 +375,7 @@ bool PostService::post_feed_handler(const httplib::Request& req, httplib::Respon
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
-        LOG_ERROR(std::format("post_feed_handler: request from unauthorized user"));
+        LOGGER_ERROR(std::format("post_feed_handler: request from unauthorized user"));
         res.status = httplib::StatusCode::Unauthorized_401;
         return false;
     }
@@ -421,7 +421,7 @@ bool PostService::post_feed_handler(const httplib::Request& req, httplib::Respon
     }
 
     if (!err.empty()) {
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
         res.set_content(j.dump(), "application/json");
         res.status = httplib::StatusCode::InternalServerError_500;

@@ -32,7 +32,7 @@ bool AuthService::authenticate(const httplib::Request& req, std::string& user_id
     }
 
     if (!err.empty()) {
-        LOG_ERROR(err);
+        LOGGER_ERROR(err);
     }
     return false;
 }

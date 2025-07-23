@@ -14,7 +14,7 @@ DatabaseService::auth_rv DatabaseService::authenticate_user(const std::string& u
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("authenticate_user: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("authenticate_user: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -46,7 +46,7 @@ DatabaseService::login_rv DatabaseService::login_user(const std::string& user_id
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("login_user: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("login_user: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -86,7 +86,7 @@ DatabaseService::user_rv DatabaseService::register_user(const std::string& fname
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("register_user: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("register_user: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             const std::string hashed_pwd = BCrypt::generateHash(pwd, 12);
@@ -130,7 +130,7 @@ DatabaseService::user_rv DatabaseService::get_user(const std::string& user_id)
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("get_user: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("get_user: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -174,7 +174,7 @@ DatabaseService::users_rv DatabaseService::search_user(const std::string& fname,
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("search_user: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("search_user: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -215,7 +215,7 @@ DatabaseService::common_rv DatabaseService::add_friend(const std::string& user_i
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("add_friend: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("add_friend: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -245,7 +245,7 @@ DatabaseService::common_rv DatabaseService::delete_friend(const std::string& use
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("delete_friend: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("delete_friend: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -276,7 +276,7 @@ DatabaseService::friends_rv DatabaseService::get_friends(const std::string& user
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("get_friends: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("get_friends: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -313,7 +313,7 @@ DatabaseService::post_rv DatabaseService::create_post(const std::string& content
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("create_post: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("create_post: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -353,7 +353,7 @@ DatabaseService::common_rv DatabaseService::update_post(const std::string& post_
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("update_post: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("update_post: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -386,7 +386,7 @@ DatabaseService::common_rv DatabaseService::delete_post(const std::string& post_
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("delete_post: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("delete_post: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -419,7 +419,7 @@ DatabaseService::post_rv DatabaseService::get_post(const std::string& post_id)
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("get_post: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("get_post: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -462,7 +462,7 @@ DatabaseService::posts_rv DatabaseService::feed_post(const std::string& user_id,
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("feed_post: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("feed_post: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -500,7 +500,7 @@ DatabaseService::common_rv DatabaseService::send_dialog_message(const std::strin
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("send_dialog_message: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("send_dialog_message: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
@@ -532,7 +532,7 @@ DatabaseService::dialog_rv DatabaseService::list_dialog_messages(const std::stri
         try {
             ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
             metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOG_TRACE(std::format("list_dialog_messages: query to {} #{} tag='{}'",
+            LOGGER_TRACE(std::format("list_dialog_messages: query to {} #{} tag='{}'",
                 (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
 
             pqxx::work tx(*scoped_conn.conn.get());
