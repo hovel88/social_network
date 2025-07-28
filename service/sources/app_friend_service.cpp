@@ -3,45 +3,47 @@
 #include <nlohmann/json.hpp>
 #include "app_friend_service.h"
 
-void FriendService::register_endpoints(httplib::Server* server)
+void FriendService::register_endpoints(drogon::HttpAppFramework* server)
 {
-    if (!server) return;
-    server->Put(R"(/friend/set/([0-9a-fA-F-]{36}))", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: PUT /friend/set/:id");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = friend_set_id_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_friend_set_id();
-        if (!ok) metrics_->count_failed_request_friend_set_id();
-        if (ok)  metrics_->store_latency_request_friend_set_id(std::chrono::duration<double>(end - start).count());
-    })
-    .Put(R"(/friend/delete/([0-9a-fA-F-]{36}))", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: PUT /friend/delete/:id");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = friend_delete_id_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_friend_delete_id();
-        if (!ok) metrics_->count_failed_request_friend_delete_id();
-        if (ok)  metrics_->store_latency_request_friend_delete_id(std::chrono::duration<double>(end - start).count());
-    });
-    LOGGER_INFOR("endpoints registered: PUT /friend/set/:id -- PUT /friend/delete/:id");
+    if (server == nullptr) return;
+
+    server->registerHandlerViaRegex(R"(/friend/set/([0-9a-fA-F-]{36}))",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback, const std::string& requested_id) {
+            LOGGER_DEBUG("handler: PUT /friend/set/:id");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = friend_set_id_handler(req, res, requested_id);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_friend_set_id();
+            if (!ok) metrics_->count_failed_request_friend_set_id();
+            if (ok)  metrics_->store_latency_request_friend_set_id(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Put});
+
+    server->registerHandlerViaRegex(R"(/friend/delete/([0-9a-fA-F-]{36}))",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback, const std::string& requested_id) {
+            LOGGER_DEBUG("handler: PUT /friend/delete/:id");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = friend_delete_id_handler(req, res, requested_id);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_friend_delete_id();
+            if (!ok) metrics_->count_failed_request_friend_delete_id();
+            if (ok)  metrics_->store_latency_request_friend_delete_id(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Put});
 }
 
-bool FriendService::pre_routing_validation(const httplib::Request& req)
+bool FriendService::friend_set_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
-    if (req.path.starts_with("/friend/set/")
-    ||  req.path.starts_with("/friend/delete/")) {
-        return true;
-    }
-    return false;
-}
-
-bool FriendService::friend_set_id_handler(const httplib::Request& req, httplib::Response& res)
-{
-    const std::string requested_id = req.matches[1];
     if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("friend_set_id_handler: request param 'id' is not an UUID format"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -49,21 +51,21 @@ bool FriendService::friend_set_id_handler(const httplib::Request& req, httplib::
         auto err = std::format("friend_set_id_handler: database service and/or authentication service are unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
         LOGGER_ERROR(std::format("friend_set_id_handler: request from unauthorized user"));
-        res.status = httplib::StatusCode::Unauthorized_401;
+        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
         return false;
     }
 
     if (id == requested_id) {
         LOGGER_ERROR(std::format("friend_set_id_handler: cannot add yourself to friends"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -89,6 +91,7 @@ bool FriendService::friend_set_id_handler(const httplib::Request& req, httplib::
             // }
 
             // возвращаем просто 200 OK
+            res->setStatusCode(drogon::HttpStatusCode::k200OK);
             return true;
         }
     } catch (std::exception& ex) {
@@ -98,18 +101,17 @@ bool FriendService::friend_set_id_handler(const httplib::Request& req, httplib::
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }
 
-bool FriendService::friend_delete_id_handler(const httplib::Request& req, httplib::Response& res)
+bool FriendService::friend_delete_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
-    const std::string requested_id = req.matches[1];
     if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("friend_delete_id_handler: request param 'id' is not an UUID format"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -117,21 +119,21 @@ bool FriendService::friend_delete_id_handler(const httplib::Request& req, httpli
         auto err = std::format("friend_delete_id_handler: database service and/or authentication service are unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
         LOGGER_ERROR(std::format("friend_delete_id_handler: request from unauthorized user"));
-        res.status = httplib::StatusCode::Unauthorized_401;
+        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
         return false;
     }
 
     if (id == requested_id) {
         LOGGER_ERROR(std::format("friend_delete_id_handler: cannot delete yourself from friends"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -152,6 +154,7 @@ bool FriendService::friend_delete_id_handler(const httplib::Request& req, httpli
             }
 
             // возвращаем просто 200 OK
+            res->setStatusCode(drogon::HttpStatusCode::k200OK);
             return true;
         }
     } catch (std::exception& ex) {
@@ -161,8 +164,9 @@ bool FriendService::friend_delete_id_handler(const httplib::Request& req, httpli
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }

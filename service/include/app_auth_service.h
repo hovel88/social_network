@@ -1,6 +1,6 @@
 #pragma once
 
-#include <httplib.h>
+#include <drogon/drogon.h>
 #include <regex>
 #include "logger/logger.h"
 #include "app_metrics.h"
@@ -23,7 +23,7 @@ public:
         metrics_(std::move(metrics)),
         db_(std::move(db)) {}
 
-    bool authenticate(const httplib::Request& req, std::string& user_id);
+    bool authenticate(const drogon::HttpRequestPtr& req, std::string& user_id);
     static bool is_valid_uuid(const std::string& id) {
         static const std::regex uuid_regex(
             "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"

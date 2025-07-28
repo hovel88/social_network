@@ -1,6 +1,9 @@
 #include <chrono>
 #include <ctime>
 #include <iostream>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <nlohmann/json.hpp>
 #include "helpers/url.h"
 #include "helpers/ip_address.h"
@@ -8,14 +11,77 @@
 #include "helpers/thread.h"
 #include "app.h"
 
-static void set_options_(socket_t sock)
-{
-    httplib::detail::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1);
-#ifdef SO_REUSEPORT
-    httplib::detail::set_socket_opt(sock, SOL_SOCKET, SO_REUSEPORT, 1);
-#endif
+static inline const char* status_message(drogon::HttpStatusCode status) {
+    switch (status) {
+    case drogon::HttpStatusCode::k100Continue:                      return "Continue";
+    case drogon::HttpStatusCode::k101SwitchingProtocols:            return "Switching Protocol";
+    case drogon::HttpStatusCode::k102Processing:                    return "Processing";
+    case drogon::HttpStatusCode::k103EarlyHints:                    return "Early Hints";
+    case drogon::HttpStatusCode::k200OK:                            return "OK";
+    case drogon::HttpStatusCode::k201Created:                       return "Created";
+    case drogon::HttpStatusCode::k202Accepted:                      return "Accepted";
+    case drogon::HttpStatusCode::k203NonAuthoritativeInformation:   return "Non-Authoritative Information";
+    case drogon::HttpStatusCode::k204NoContent:                     return "No Content";
+    case drogon::HttpStatusCode::k205ResetContent:                  return "Reset Content";
+    case drogon::HttpStatusCode::k206PartialContent:                return "Partial Content";
+    case drogon::HttpStatusCode::k207MultiStatus:                   return "Multi-Status";
+    case drogon::HttpStatusCode::k208AlreadyReported:               return "Already Reported";
+    case drogon::HttpStatusCode::k226IMUsed:                        return "IM Used";
+    case drogon::HttpStatusCode::k300MultipleChoices:               return "Multiple Choices";
+    case drogon::HttpStatusCode::k301MovedPermanently:              return "Moved Permanently";
+    case drogon::HttpStatusCode::k302Found:                         return "Found";
+    case drogon::HttpStatusCode::k303SeeOther:                      return "See Other";
+    case drogon::HttpStatusCode::k304NotModified:                   return "Not Modified";
+    case drogon::HttpStatusCode::k305UseProxy:                      return "Use Proxy";
+    case drogon::HttpStatusCode::k306Unused:                        return "unused";
+    case drogon::HttpStatusCode::k307TemporaryRedirect:             return "Temporary Redirect";
+    case drogon::HttpStatusCode::k308PermanentRedirect:             return "Permanent Redirect";
+    case drogon::HttpStatusCode::k400BadRequest:                    return "Bad Request";
+    case drogon::HttpStatusCode::k401Unauthorized:                  return "Unauthorized";
+    case drogon::HttpStatusCode::k402PaymentRequired:               return "Payment Required";
+    case drogon::HttpStatusCode::k403Forbidden:                     return "Forbidden";
+    case drogon::HttpStatusCode::k404NotFound:                      return "Not Found";
+    case drogon::HttpStatusCode::k405MethodNotAllowed:              return "Method Not Allowed";
+    case drogon::HttpStatusCode::k406NotAcceptable:                 return "Not Acceptable";
+    case drogon::HttpStatusCode::k407ProxyAuthenticationRequired:   return "Proxy Authentication Required";
+    case drogon::HttpStatusCode::k408RequestTimeout:                return "Request Timeout";
+    case drogon::HttpStatusCode::k409Conflict:                      return "Conflict";
+    case drogon::HttpStatusCode::k410Gone:                          return "Gone";
+    case drogon::HttpStatusCode::k411LengthRequired:                return "Length Required";
+    case drogon::HttpStatusCode::k412PreconditionFailed:            return "Precondition Failed";
+    case drogon::HttpStatusCode::k413RequestEntityTooLarge:         return "Payload Too Large";
+    case drogon::HttpStatusCode::k414RequestURITooLarge:            return "URI Too Long";
+    case drogon::HttpStatusCode::k415UnsupportedMediaType:          return "Unsupported Media Type";
+    case drogon::HttpStatusCode::k416RequestedRangeNotSatisfiable:  return "Range Not Satisfiable";
+    case drogon::HttpStatusCode::k417ExpectationFailed:             return "Expectation Failed";
+    case drogon::HttpStatusCode::k418ImATeapot:                     return "I'm a teapot";
+    case drogon::HttpStatusCode::k421MisdirectedRequest:            return "Misdirected Request";
+    case drogon::HttpStatusCode::k422UnprocessableEntity:           return "Unprocessable Content";
+    case drogon::HttpStatusCode::k423Locked:                        return "Locked";
+    case drogon::HttpStatusCode::k424FailedDependency:              return "Failed Dependency";
+    case drogon::HttpStatusCode::k425TooEarly:                      return "Too Early";
+    case drogon::HttpStatusCode::k426UpgradeRequired:               return "Upgrade Required";
+    case drogon::HttpStatusCode::k428PreconditionRequired:          return "Precondition Required";
+    case drogon::HttpStatusCode::k429TooManyRequests:               return "Too Many Requests";
+    case drogon::HttpStatusCode::k431RequestHeaderFieldsTooLarge:   return "Request Header Fields Too Large";
+    case drogon::HttpStatusCode::k451UnavailableForLegalReasons:    return "Unavailable For Legal Reasons";
+    case drogon::HttpStatusCode::k500InternalServerError:           return "Internal Server Error";
+    case drogon::HttpStatusCode::k501NotImplemented:                return "Not Implemented";
+    case drogon::HttpStatusCode::k502BadGateway:                    return "Bad Gateway";
+    case drogon::HttpStatusCode::k503ServiceUnavailable:            return "Service Unavailable";
+    case drogon::HttpStatusCode::k504GatewayTimeout:                return "Gateway Timeout";
+    case drogon::HttpStatusCode::k505HTTPVersionNotSupported:       return "HTTP Version Not Supported";
+    case drogon::HttpStatusCode::k506VariantAlsoNegotiates:         return "Variant Also Negotiates";
+    case drogon::HttpStatusCode::k507InsufficientStorage:           return "Insufficient Storage";
+    case drogon::HttpStatusCode::k508LoopDetected:                  return "Loop Detected";
+    case drogon::HttpStatusCode::k510NotExtended:                   return "Not Extended";
+    case drogon::HttpStatusCode::k511NetworkAuthenticationRequired: return "Network Authentication Required";
+
+    default: return "Unknown";
+    }
 }
 
+#if 0
 static std::string time_local_str_()
 {
     auto p = std::chrono::system_clock::now();
@@ -39,6 +105,7 @@ static std::string time_gmt_str_()
     ss << std::put_time(std::localtime(&t), "%a, %d %b %Y %H:%M:%S GMT");
     return ss.str();
 }
+#endif
 
 //-----------------------------------------------------------------------------
 
@@ -46,7 +113,7 @@ static std::string time_gmt_str_()
 
 App::~App()
 {
-    if (http_server_) http_server_->stop();
+    if (http_server_) http_server_->quit();
     if (http_server_thread_.joinable()) {
         http_server_thread_.join();
     }
@@ -54,7 +121,8 @@ App::~App()
 
 App::App(std::shared_ptr<cxxopts::ParseResult> cli_opts)
 :   logger_(Logging::configure_logger({ {"type", "stdout"}, {"color", "true"}, {"level", "5"} })),
-    conf_(std::make_shared<Configuration>(logger_, cli_opts))
+    conf_(std::make_shared<Configuration>(logger_, cli_opts)),
+    http_server_(std::shared_ptr<drogon::HttpAppFramework>(&drogon::app(), [](drogon::HttpAppFramework*){})) // добавили deleter (пустой), т.к. за жизненный цикл объекта отвечает синглтон, а не shared_ptr
 {}
 
 void App::run()
@@ -146,7 +214,7 @@ void App::http_start()
     static const std::string http_server_thread_name("HttpSrv");
 
     if (http_server_
-    &&  http_server_->is_running()) return;
+    &&  http_server_->isRunning()) return;
 
     try {
         // регистрируем сервер для Prometheus-метрик
@@ -154,48 +222,110 @@ void App::http_start()
         metrics_ = std::make_shared<Metrics>(db_host_tags);
         exposer_->RegisterCollectable(metrics_->registry());
 
-        // регистрируем HTTP-сервер
-        http_server_ = std::make_unique<httplib::Server>();
-        if (!http_server_->is_valid()) throw std::runtime_error("server has an error...");
+        // регистрируем и настраиваем HTTP-сервер
+        http_server_->setBeforeListenSockOptCallback([this](int sock) {
+            const int enable = 1;
+            if (setsockopt(sock, IPPROTO_TCP, TCP_FASTOPEN, &enable, sizeof(enable)) == -1) {
+                LOGGER_INFOR("setsockopt TCP_FASTOPEN failed");
+            }
+            if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) == -1) {
+                LOGGER_INFOR("setsockopt SO_REUSEADDR failed");
+            }
+            #ifdef SO_REUSEPORT
+            if (setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) == -1) {
+                LOGGER_INFOR("setsockopt SO_REUSEPORT failed");
+            }
+            #endif
+        })
+        .setAfterAcceptSockOptCallback([](int /*sock*/) {})
+        // регистрируем обработчик странички с ответом об ошибке
+        .setCustomErrorHandler([this](drogon::HttpStatusCode code, const auto& req)-> drogon::HttpResponsePtr {
+            constexpr auto error_html = R"(<html><head><title>{} {}</title></head><body><h1>Can't handle '{} {}'</h1></body></html>)";
+            auto body = std::format(error_html, static_cast<int>(code), status_message(code), req->getMethodString(), req->getPath());
+            auto res  = drogon::HttpResponse::newHttpResponse(code, drogon::ContentType::CT_TEXT_HTML);
+            res->setBody(body);
+            return res;
+        })
+        // регистрируем обработчик странички с ответом об исключениях
+        .setExceptionHandler([this](const std::exception& ex, const auto& req, auto&& callback) {
+            constexpr auto exception_html = R"(<html><head><title>Exception</title></head><body><h1>Can't handle '{} {}'</h1><p>{}</p></body></html>)";
+            auto body = std::format(exception_html, req->getMethodString(), req->getPath(), ex.what());
+            auto res  = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k500InternalServerError, drogon::ContentType::CT_TEXT_HTML);
+            res->setBody(body);
+            callback(res);
+        })
+        .registerBeginningAdvice([this]() {
+            auto listeners = http_server_->getListeners();
+            for (const auto& listener : listeners) {
+                LOGGER_INFOR(std::format("{} socket was configured into listening state: {}",
+                   http_server_thread_name, listener.toIpPort()));
+            }
+        })
+        // лимит размера тела запроса, защита от DDoS: 1 MB
+        .setClientMaxBodySize(1 * 1024 * 1024)
+        // таймаут на поддерживание соединение без операций чтения/записи (секунд)
+        .setIdleConnectionTimeout(5)
+        // Keep-Alive connection
+        .setKeepaliveRequestsNumber(2)
+        // добавлять в каждый ответ заголовок "Data: Sat, 01 Jan 2005 11:00:00 GMT"
+        .enableDateHeader(true)
+        // добавлять в каждый ответ заголовок "Server: drogon/1.9.11"
+        .enableServerHeader(true)
+        // отключаем сжатие небинарного тела ответа (если его размер больше 1024 байт)
+        .enableGzip(false)
+        .enableBrotli(false)
+        // настройки логирования (уровень Debug, с локальным временем, в stdout)
+        .setLogLocalTime(true)
+        .setLogLevel(trantor::Logger::LogLevel::kDebug)
+        .setLogPath("")
+        // количество потоков для IO event loops
+        .setThreadNum(conf_->config().http_threads_count)
+        // количество одновременно поддерживаемых подключений
+        .setMaxConnectionNum(conf_->config().http_queue_capacity);
+
+        // обработчики
+        http_server_->registerHandler("/livez",
+            [this](const drogon::HttpRequestPtr& /*req*/, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
+                constexpr auto result_html = "{}\n";
+                constexpr auto ok          = "ok";
+                constexpr auto fail        = "fail";
+                if (liveness_check_cb_
+                &&  liveness_check_cb_()) {
+                    auto body = std::format(result_html, ok);
+                    auto res  = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k200OK, drogon::ContentType::CT_TEXT_PLAIN);
+                    res->setBody(body);
+                    callback(res);
+                } else {
+                    auto body = std::format(result_html, fail);
+                    auto res  = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k500InternalServerError, drogon::ContentType::CT_TEXT_PLAIN);
+                    res->setBody(body);
+                    callback(res);
+                }
+            },
+            {drogon::HttpMethod::Get});
+
+        http_server_->registerHandler("/readyz",
+            [this](const drogon::HttpRequestPtr& /*req*/, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
+                constexpr auto result_html = "{}\n";
+                constexpr auto ok          = "ok";
+                constexpr auto fail        = "fail";
+                if (readiness_check_cb_
+                &&  readiness_check_cb_()) {
+                    auto body = std::format(result_html, ok);
+                    auto res  = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k200OK, drogon::ContentType::CT_TEXT_PLAIN);
+                    res->setBody(body);
+                    callback(res);
+                } else {
+                    auto body = std::format(result_html, fail);
+                    auto res  = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k500InternalServerError, drogon::ContentType::CT_TEXT_PLAIN);
+                    res->setBody(body);
+                    callback(res);
+                }
+            },
+            {drogon::HttpMethod::Get});
 
         NetHelpers::SocketAddress sock_addr(conf_->config().http_listening);
-        http_server_->bind_to_port(sock_addr.host().to_string(), sock_addr.port());
-
-        LOGGER_INFOR(std::format("{} socket was configured into listening state: {}",
-            http_server_thread_name, sock_addr.to_string()));
-
-        // устанавливаем наш ThreadPool для обработки очереди запросов
-        http_server_->new_task_queue = [this] {
-            return new ThreadPoolAdaptor(http_server_thread_name + std::string("Pool"),
-                                         logger_,
-                                         conf_->config().http_threads_count,
-                                         conf_->config().http_queue_capacity);
-        };
-
-                    // Keep-Alive connection
-        http_server_->set_keep_alive_max_count(2)
-                    .set_keep_alive_timeout(10)
-                    // Timeouts
-                    .set_read_timeout(5, 0)
-                    .set_write_timeout(5, 0)
-                    .set_idle_interval(0, 100'000/*usec*/)
-                    // включаем SO_REUSEADDR и SO_REUSEPORT
-                    .set_socket_options(set_options_)
-                    // лимит размера тела запроса, защита от DDoS: 1 MB
-                    .set_payload_max_length(1 * 1024 * 1024)
-                    // обработчик ошибок
-                    .set_error_handler([this](const auto& req, auto& res) { error_handler(req, res); })
-                    // обработчик исключений
-                    .set_exception_handler([this](const auto& req, auto& res, std::exception_ptr ep) { exception_handler(req, res, ep); })
-                    // предварительная обработка (после приема запроса)
-                    .set_pre_routing_handler([this](const auto& req, auto& res) { return (pre_routing_handler(req, res)) ? (httplib::Server::HandlerResponse::Unhandled) : (httplib::Server::HandlerResponse::Handled); })
-                    // окончательная обработка (перед отправкой ответа)
-                    .set_post_routing_handler([this](const auto& req, auto& res) { post_routing_handler(req, res); })
-                    // логирование запросов
-                    .set_logger([this](const auto& req, const auto& res) { log_handler(req, res); })
-                    // обработчики
-                    .Get("/livez",  [this](const auto& req, auto& res) { liveness_handler(req, res); })
-                    .Get("/readyz", [this](const auto& req, auto& res) { readiness_handler(req, res); });
+        http_server_->addListener(sock_addr.host().to_string(), sock_addr.port());
 
         // создаем сервисы
         service_cache    = std::make_shared<CacheService>(CACHE_CAPACITY, std::chrono::seconds(CACHE_TTL_SEC));
@@ -212,9 +342,29 @@ void App::http_start()
         service_post->register_endpoints(http_server_.get());
         service_dialog->register_endpoints(http_server_.get());
 
+        std::string info;
+        {
+            std::map<std::string, std::string> enpdoints;
+            auto handlers = http_server_->getHandlersInfo();
+            for (const auto& handler : handlers) {
+                std::string path_pattern;
+                drogon::HttpMethod method;
+                std::string description;
+                std::tie(path_pattern, method, description) = handler;
+
+                std::string enpdoint = std::format("{:8} {}", drogon::to_string(method), path_pattern);
+                std::string key      = std::format("{}_{}", path_pattern, drogon::to_string(method));
+                enpdoints[key] = enpdoint;
+            }
+            for (const auto& [_, enpdoint] : enpdoints) {
+                info.append(std::format("\n  {}", enpdoint));
+            }
+        }
+        LOGGER_INFOR(std::format("{} registered endpoints:{}", http_server_thread_name, info));
+
         http_server_thread_ = std::thread([this]()->void {
-            ThreadHelpers::block_signals();
-            http_server_->listen_after_bind();
+            // ThreadHelpers::block_signals();
+            http_server_->run();
         });
         ThreadHelpers::set_name(http_server_thread_.native_handle(), http_server_thread_name);
     }
@@ -222,90 +372,7 @@ void App::http_start()
         LOGGER_ERROR(std::format("{} exception: {}", http_server_thread_name, ex.what()));
     }
 }
-
-bool App::pre_routing_handler(const httplib::Request& req, httplib::Response& res)
-{
-    if ((req.path == "/livez" || req.path == "/readyz")
-    ||  (service_user   && service_user->pre_routing_validation(req))
-    ||  (service_friend && service_friend->pre_routing_validation(req))
-    ||  (service_post   && service_post->pre_routing_validation(req))
-    ||  (service_dialog && service_dialog->pre_routing_validation(req))) {
-        return true;
-    }
-    res.status = httplib::StatusCode::NotImplemented_501;
-    return false;
-}
-
-void App::liveness_handler(const httplib::Request& /*req*/, httplib::Response& res)
-{
-    constexpr auto result_html = "{}\n";
-    constexpr auto ok          = "ok";
-    constexpr auto fail        = "fail";
-
-    if (liveness_check_cb_
-    &&  liveness_check_cb_()) {
-        res.set_content(std::format(result_html, ok), "text/plain");
-    } else {
-        res.set_content(std::format(result_html, fail), "text/plain");
-        res.status = httplib::StatusCode::InternalServerError_500;
-    }
-}
-
-void App::readiness_handler(const httplib::Request& /*req*/, httplib::Response& res)
-{
-    constexpr auto result_html = "{}\n";
-    constexpr auto ok          = "ok";
-    constexpr auto fail        = "fail";
-
-    if (readiness_check_cb_
-    &&  readiness_check_cb_()) {
-        res.set_content(std::format(result_html, ok), "text/plain");
-    } else {
-        res.set_content(std::format(result_html, fail), "text/plain");
-        res.status = httplib::StatusCode::InternalServerError_500;
-    }
-}
-
-void App::post_routing_handler(const httplib::Request& /*req*/, httplib::Response& res)
-{
-    static const std::string srv_name(std::string("social_network/1.0")
-                                    + std::format(" (Linux) httplib/{}", CPPHTTPLIB_VERSION));
-
-    res.set_header("Date", time_gmt_str_());
-    res.set_header("Server", srv_name);
-    res.set_header("X-Content-Type-Options", "nosniff");
-    res.set_header("X-Frame-Options", "DENY");
-    res.set_header("Content-Security-Policy", "default-src 'self'");
-}
-
-void App::error_handler(const httplib::Request& req, httplib::Response& res)
-{
-    constexpr auto error_html =
-R"(<html><head><title>{} {}</title></head>
-<body><h1>Can't handle '{} {}'</h1></body></html>
-)";
-    auto body = std::format(error_html, res.status, httplib::status_message(res.status), req.method, req.path);
-    res.set_content(body, "text/html");
-}
-
-void App::exception_handler(const httplib::Request& /*req*/, httplib::Response& res, std::exception_ptr ep)
-{
-    constexpr auto exception_html = R"(<h1>Error 500</h1><p>{}</p>)";
-    std::string mes;
-    try {
-        std::rethrow_exception(ep);
-    }
-    catch (std::exception &e) {
-        mes.assign(e.what());
-    }
-    catch (...) { 
-        mes.assign("Unknown Exception");
-    }
-    auto body = std::format(exception_html, res.status);
-    res.set_content(body, "text/html");
-    res.status = httplib::StatusCode::InternalServerError_500;
-}
-
+#if 0
 void App::log_handler(const httplib::Request& req, const httplib::Response& res)
 {
     auto request         = std::format("{} {} {}", req.method, req.path, req.version);
@@ -328,3 +395,4 @@ void App::log_handler(const httplib::Request& req, const httplib::Response& res)
                                     /*http_referer=*/"-",
                                     http_user_agent));
 }
+#endif

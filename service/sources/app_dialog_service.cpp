@@ -3,58 +3,59 @@
 #include <nlohmann/json.hpp>
 #include "app_dialog_service.h"
 
-void DialogService::register_endpoints(httplib::Server* server)
+void DialogService::register_endpoints(drogon::HttpAppFramework* server)
 {
-    if (!server) return;
-    server->Post(R"(/dialog/([0-9a-fA-F-]{36})/send)", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: POST /dialog/:id/send");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = dialog_send_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_dialog_send();
-        if (!ok) metrics_->count_failed_request_dialog_send();
-        if (ok)  metrics_->store_latency_request_dialog_send(std::chrono::duration<double>(end - start).count());
-    })
-    .Get(R"(/dialog/([0-9a-fA-F-]{36})/list)", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: GET /dialog/:id/list");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = dialog_list_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_dialog_list();
-        if (!ok) metrics_->count_failed_request_dialog_list();
-        if (ok)  metrics_->store_latency_request_dialog_list(std::chrono::duration<double>(end - start).count());
-    });
-    LOGGER_INFOR("endpoints registered: POST /dialog/:id/send -- GET /dialog/:id/list");
+    if (server == nullptr) return;
+
+    server->registerHandlerViaRegex(R"(/dialog/([0-9a-fA-F-]{36})/send)",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback, const std::string& requested_id) {
+            LOGGER_DEBUG("handler: POST /dialog/:id/send");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = dialog_send_handler(req, res, requested_id);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_dialog_send();
+            if (!ok) metrics_->count_failed_request_dialog_send();
+            if (ok)  metrics_->store_latency_request_dialog_send(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Post});
+
+    server->registerHandlerViaRegex(R"(/dialog/([0-9a-fA-F-]{36})/list)",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback, const std::string& requested_id) {
+            LOGGER_DEBUG("handler: GET /dialog/:id/list");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = dialog_list_handler(req, res, requested_id);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_dialog_list();
+            if (!ok) metrics_->count_failed_request_dialog_list();
+            if (ok)  metrics_->store_latency_request_dialog_list(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Get});
 }
 
-bool DialogService::pre_routing_validation(const httplib::Request& req)
+bool DialogService::dialog_send_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
-    if (req.path.starts_with("/dialog/")) {
-        return true;
-    }
-    return false;
-}
-
-bool DialogService::dialog_send_handler(const httplib::Request& req, httplib::Response& res)
-{
-    auto body = nlohmann::json::parse(req.body);
+    auto body = nlohmann::json::parse(req->getBody());
 
     if (!body.contains("text")) {
         LOGGER_ERROR(std::format("dialog_send_handler: request params does not contain 'text'"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!body["text"].is_string()) {
         LOGGER_ERROR(std::format("dialog_send_handler: request params 'text' should be a string"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
-    const std::string requested_id = req.matches[1];
     if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("dialog_send_handler: request param 'id' is not an UUID format"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -62,21 +63,21 @@ bool DialogService::dialog_send_handler(const httplib::Request& req, httplib::Re
         auto err = std::format("dialog_send_handler: database service and/or authentication service are unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
         LOGGER_ERROR(std::format("dialog_send_handler: request from unauthorized user"));
-        res.status = httplib::StatusCode::Unauthorized_401;
+        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
         return false;
     }
 
     if (id == requested_id) {
         LOGGER_ERROR(std::format("dialog_send_handler: cannot make dialog with yourself"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -91,6 +92,7 @@ bool DialogService::dialog_send_handler(const httplib::Request& req, httplib::Re
             err = rv.error_str;
         } else {
             // возвращаем просто 200 OK
+            res->setStatusCode(drogon::HttpStatusCode::k200OK);
             return true;
         }
     } catch (std::exception& ex) {
@@ -100,18 +102,17 @@ bool DialogService::dialog_send_handler(const httplib::Request& req, httplib::Re
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }
 
-bool DialogService::dialog_list_handler(const httplib::Request& req, httplib::Response& res)
+bool DialogService::dialog_list_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
-    const std::string requested_id = req.matches[1];
     if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("dialog_list_handler: request param 'id' is not an UUID format"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -119,21 +120,21 @@ bool DialogService::dialog_list_handler(const httplib::Request& req, httplib::Re
         auto err = std::format("dialog_list_handler: database service and/or authentication service are unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
         LOGGER_ERROR(std::format("dialog_list_handler: request from unauthorized user"));
-        res.status = httplib::StatusCode::Unauthorized_401;
+        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
         return false;
     }
 
     if (id == requested_id) {
         LOGGER_ERROR(std::format("dialog_list_handler: cannot make dialog with yourself"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -146,7 +147,9 @@ bool DialogService::dialog_list_handler(const httplib::Request& req, httplib::Re
         if (!rv.error_str.empty()) {
             err = rv.error_str;
         } else {
-            res.set_content(serialize_messages(get_page(rv.messages, /*offset=*/0, /*limit=*/100)), "application/json");
+            res->setStatusCode(drogon::HttpStatusCode::k200OK);
+            res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+            res->setBody(serialize_messages(get_page(rv.messages, /*offset=*/0, /*limit=*/100)));
             return true;
         }
     } catch (std::exception& ex) {
@@ -156,8 +159,9 @@ bool DialogService::dialog_list_handler(const httplib::Request& req, httplib::Re
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }

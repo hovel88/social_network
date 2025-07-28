@@ -2,7 +2,6 @@
 #include <ctime>
 #include <nlohmann/json.hpp>
 #include "app_post_service.h"
-#include "helpers/number_parser.h"
 
 static std::string time_point_to_format_str_(const std::chrono::system_clock::time_point& p)
 {
@@ -20,75 +19,95 @@ static std::string time_point_to_format_str_(const std::chrono::system_clock::ti
 
 
 
-void PostService::register_endpoints(httplib::Server* server)
+void PostService::register_endpoints(drogon::HttpAppFramework* server)
 {
-    if (!server) return;
-    server->Get(R"(/post/get/([0-9a-fA-F-]{36}))", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: GET /post/get/:id");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = post_get_id_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_post_get_id();
-        if (!ok) metrics_->count_failed_request_post_get_id();
-        if (ok)  metrics_->store_latency_request_post_get_id(std::chrono::duration<double>(end - start).count());
-    })
-    .Put(R"(/post/delete/([0-9a-fA-F-]{36}))", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: PUT /post/delete/:id");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = post_delete_id_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_post_delete_id();
-        if (!ok) metrics_->count_failed_request_post_delete_id();
-        if (ok)  metrics_->store_latency_request_post_delete_id(std::chrono::duration<double>(end - start).count());
-    })
-    .Post("/post/create", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: POST /post/create");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = post_create_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_post_create();
-        if (!ok) metrics_->count_failed_request_post_create();
-        if (ok)  metrics_->store_latency_request_post_create(std::chrono::duration<double>(end - start).count());
-    })
-    .Put("/post/update", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: PUT /post/update");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = post_update_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_post_update();
-        if (!ok) metrics_->count_failed_request_post_update();
-        if (ok)  metrics_->store_latency_request_post_update(std::chrono::duration<double>(end - start).count());
-    })
-    .Get("/post/feed", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: GET /post/feed");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = post_feed_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_post_feed();
-        if (!ok) metrics_->count_failed_request_post_feed();
-        if (ok)  metrics_->store_latency_request_post_feed(std::chrono::duration<double>(end - start).count());
-    });
-    LOGGER_INFOR("endpoints registered: GET /post/get/:id -- PUT /post/delete/:id -- POST /post/create -- PUT /post/update -- GET /post/feed");
+    if (server == nullptr) return;
+
+    server->registerHandlerViaRegex(R"(/post/get/([0-9a-fA-F-]{36}))",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback, const std::string& requested_id) {
+            LOGGER_DEBUG("handler: GET /post/get/:id");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = post_get_id_handler(req, res, requested_id);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_post_get_id();
+            if (!ok) metrics_->count_failed_request_post_get_id();
+            if (ok)  metrics_->store_latency_request_post_get_id(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Get});
+
+    server->registerHandlerViaRegex(R"(/post/delete/([0-9a-fA-F-]{36}))",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback, const std::string& requested_id) {
+            LOGGER_DEBUG("handler: PUT /post/delete/:id");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = post_delete_id_handler(req, res, requested_id);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_post_delete_id();
+            if (!ok) metrics_->count_failed_request_post_delete_id();
+            if (ok)  metrics_->store_latency_request_post_delete_id(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Put});
+
+    server->registerHandler("/post/create",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
+            LOGGER_DEBUG("handler: POST /post/create");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = post_create_handler(req, res);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_post_create();
+            if (!ok) metrics_->count_failed_request_post_create();
+            if (ok)  metrics_->store_latency_request_post_create(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Post});
+
+    server->registerHandler("/post/update",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
+            LOGGER_DEBUG("handler: PUT /post/update");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = post_update_handler(req, res);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_post_update();
+            if (!ok) metrics_->count_failed_request_post_update();
+            if (ok)  metrics_->store_latency_request_post_update(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Put});
+
+    server->registerHandler("/post/feed",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
+            LOGGER_DEBUG("handler: GET /post/feed");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = post_feed_handler(req, res);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_post_feed();
+            if (!ok) metrics_->count_failed_request_post_feed();
+            if (ok)  metrics_->store_latency_request_post_feed(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Get});
 }
 
-bool PostService::pre_routing_validation(const httplib::Request& req)
+bool PostService::post_get_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
-    if (req.path.starts_with("/post/get/")
-    ||  req.path.starts_with("/post/delete/")
-    ||  req.path == "/post/create"
-    ||  req.path == "/post/update"
-    ||  req.path == "/post/feed") {
-        return true;
-    }
-    return false;
-}
-
-bool PostService::post_get_id_handler(const httplib::Request& req, httplib::Response& res)
-{
-    const std::string requested_id = req.matches[1];
     if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("post_get_id_handler: request param 'id' is not an UUID format"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -96,15 +115,16 @@ bool PostService::post_get_id_handler(const httplib::Request& req, httplib::Resp
         auto err = std::format("post_get_id_handler: database service and/or authentication service are unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
         LOGGER_ERROR(std::format("post_get_id_handler: request from unauthorized user"));
-        res.status = httplib::StatusCode::Unauthorized_401;
+        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
         return false;
     }
 
@@ -118,11 +138,13 @@ bool PostService::post_get_id_handler(const httplib::Request& req, httplib::Resp
         } else {
             if (!rv.post.has_value()) {
                 // пост не найден
-                res.status = httplib::StatusCode::NotFound_404;
+                res->setStatusCode(drogon::HttpStatusCode::k404NotFound);
                 return false;
             } else {
                 // успешное получение поста
-                res.set_content(serialize_post(rv.post.value()), "application/json");
+                res->setStatusCode(drogon::HttpStatusCode::k200OK);
+                res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+                res->setBody(serialize_post(rv.post.value()));
                 return true;
             }
         }
@@ -133,18 +155,17 @@ bool PostService::post_get_id_handler(const httplib::Request& req, httplib::Resp
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }
 
-bool PostService::post_delete_id_handler(const httplib::Request& req, httplib::Response& res)
+bool PostService::post_delete_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
-    const std::string requested_id = req.matches[1];
     if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("post_delete_id_handler: request param 'id' is not an UUID format"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -152,15 +173,16 @@ bool PostService::post_delete_id_handler(const httplib::Request& req, httplib::R
         auto err = std::format("post_delete_id_handler: database service and/or authentication service are unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
         LOGGER_ERROR(std::format("post_delete_id_handler: request from unauthorized user"));
-        res.status = httplib::StatusCode::Unauthorized_401;
+        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
         return false;
     }
 
@@ -182,6 +204,7 @@ bool PostService::post_delete_id_handler(const httplib::Request& req, httplib::R
             }
 
             // возвращаем просто 200 OK
+            res->setStatusCode(drogon::HttpStatusCode::k200OK);
             return true;
         }
     } catch (std::exception& ex) {
@@ -191,25 +214,24 @@ bool PostService::post_delete_id_handler(const httplib::Request& req, httplib::R
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }
 
-bool PostService::post_create_handler(const httplib::Request& req, httplib::Response& res)
+bool PostService::post_create_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res)
 {
-    auto body = nlohmann::json::parse(req.body);
+    auto body = nlohmann::json::parse(req->getBody());
 
     if (!body.contains("text")) {
         LOGGER_ERROR(std::format("post_create_handler: request params does not contain 'text'"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!body["text"].is_string()) {
         LOGGER_ERROR(std::format("post_create_handler: request params 'text' should be a string"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -217,15 +239,16 @@ bool PostService::post_create_handler(const httplib::Request& req, httplib::Resp
         auto err = std::format("post_create_handler: database service and/or authentication service are unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
         LOGGER_ERROR(std::format("post_create_handler: request from unauthorized user"));
-        res.status = httplib::StatusCode::Unauthorized_401;
+        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
         return false;
     }
 
@@ -251,7 +274,9 @@ bool PostService::post_create_handler(const httplib::Request& req, httplib::Resp
 
                 // успешная регистрация поста
                 nlohmann::json j = {{"post_id", rv.post.value().id}};
-                res.set_content(j.dump(), "application/json");
+                res->setStatusCode(drogon::HttpStatusCode::k200OK);
+                res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+                res->setBody(j.dump());
                 return true;
             }
         }
@@ -262,33 +287,31 @@ bool PostService::post_create_handler(const httplib::Request& req, httplib::Resp
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }
 
-bool PostService::post_update_handler(const httplib::Request& req, httplib::Response& res)
+bool PostService::post_update_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res)
 {
-    auto body = nlohmann::json::parse(req.body);
+    auto body = nlohmann::json::parse(req->getBody());
 
     if (!body.contains("id")
     ||  !body.contains("text")) {
         LOGGER_ERROR(std::format("post_update_handler: request params does not contain 'id' and/or 'text'"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!body["id"].is_string()
     ||  !body["text"].is_string()) {
         LOGGER_ERROR(std::format("post_update_handler: request params 'id' and 'text' should be a string"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!AuthService::is_valid_uuid(body["id"].get<std::string>())) {
         LOGGER_ERROR(std::format("post_update_handler: request param 'id' is not an UUID format"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -296,15 +319,16 @@ bool PostService::post_update_handler(const httplib::Request& req, httplib::Resp
         auto err = std::format("post_update_handler: database service and/or authentication service are unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
         LOGGER_ERROR(std::format("post_update_handler: request from unauthorized user"));
-        res.status = httplib::StatusCode::Unauthorized_401;
+        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
         return false;
     }
 
@@ -327,6 +351,7 @@ bool PostService::post_update_handler(const httplib::Request& req, httplib::Resp
             }
 
             // возвращаем просто 200 OK
+            res->setStatusCode(drogon::HttpStatusCode::k200OK);
             return true;
         }
     } catch (std::exception& ex) {
@@ -336,47 +361,49 @@ bool PostService::post_update_handler(const httplib::Request& req, httplib::Resp
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }
 
-bool PostService::post_feed_handler(const httplib::Request& req, httplib::Response& res)
+bool PostService::post_feed_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res)
 {
     size_t offset = 0;
     size_t limit  = 10;
 
-    if (req.has_param("offset")) {
-        auto v = NumberParserHelpers::parse_int(req.get_param_value("offset"));
-        if (v.has_value() && v.value() >= 0) {
+    {
+        auto v = req->getOptionalParameter<size_t>("offset");
+        if (v.has_value() /*&& v.value() >= 0*/) {
             offset = static_cast<size_t>(v.value());
         }
     }
-    if (req.has_param("limit")) {
-        auto v = NumberParserHelpers::parse_int(req.get_param_value("limit"));
+    {
+        auto v = req->getOptionalParameter<size_t>("limit");
         if (v.has_value() && v.value() >= 1) {
             limit = static_cast<size_t>(v.value());
         }
     }
 
     // добавляем в ответ несколько заголовков с информацией о параметрах "текущей страницы"
-    res.set_header("X-Pagination-Offset", std::to_string(offset));
-    res.set_header("X-Pagination-Limit", std::to_string(limit));
+    res->addHeader("X-Pagination-Offset", std::to_string(offset));
+    res->addHeader("X-Pagination-Limit", std::to_string(limit));
 
     if (!db_ || !auth_) {
         auto err = std::format("post_feed_handler: database service and/or authentication service are unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
     std::string id;
     if (!auth_->authenticate(req, id)) {
         LOGGER_ERROR(std::format("post_feed_handler: request from unauthorized user"));
-        res.status = httplib::StatusCode::Unauthorized_401;
+        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
         return false;
     }
 
@@ -389,18 +416,20 @@ bool PostService::post_feed_handler(const httplib::Request& req, httplib::Respon
             std::chrono::seconds                  remaining_ttl{};
             auto cache_feed = cache_->get_feed(user_id, expires_at, remaining_ttl);
             if (cache_feed.has_value()) {
-                res.set_header("Cache-Control", std::format("max-age={}, must-revalidate", remaining_ttl.count()));
-                res.set_header("X-Cache-Status", "HIT");
-                res.set_header("X-Cache-Total-Count", std::to_string(cache_feed.value().size()));
-                res.set_header("X-Cache-Expires", time_point_to_format_str_(expires_at));
+                res->addHeader("Cache-Control", std::format("max-age={}, must-revalidate", remaining_ttl.count()));
+                res->addHeader("X-Cache-Status", "HIT");
+                res->addHeader("X-Cache-Total-Count", std::to_string(cache_feed.value().size()));
+                res->addHeader("X-Cache-Expires", time_point_to_format_str_(expires_at));
                 metrics_->count_feed_cache_hits();
             } else {
-                res.set_header("X-Cache-Status", "MISS");
+                res->addHeader("X-Cache-Status", "MISS");
                 metrics_->count_feed_cache_misses();
             }
 
             if (cache_feed.has_value()) {
-                res.set_content(serialize_posts(get_page(cache_feed.value(), offset, limit)), "application/json");
+                res->setStatusCode(drogon::HttpStatusCode::k200OK);
+                res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+                res->setBody(serialize_posts(get_page(cache_feed.value(), offset, limit)));
                 return true;
             }
         }
@@ -413,7 +442,9 @@ bool PostService::post_feed_handler(const httplib::Request& req, httplib::Respon
                 cache_->put_feed(user_id, rv.posts);
             }
 
-            res.set_content(serialize_posts(get_page(rv.posts, offset, limit)), "application/json");
+            res->setStatusCode(drogon::HttpStatusCode::k200OK);
+            res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+            res->setBody(serialize_posts(get_page(rv.posts, offset, limit)));
             return true;
         }
     } catch (std::exception& ex) {
@@ -423,8 +454,9 @@ bool PostService::post_feed_handler(const httplib::Request& req, httplib::Respon
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }

@@ -2,9 +2,9 @@
 #include "app_auth_service.h"
 #include "helpers/string.h"
 
-bool AuthService::authenticate(const httplib::Request& req, std::string& user_id)
+bool AuthService::authenticate(const drogon::HttpRequestPtr& req, std::string& user_id)
 {
-    auto auth_header = req.get_header_value("Authorization");
+    auto auth_header = req->getHeader("Authorization");
     if (auth_header.empty()
     ||  auth_header.find("Bearer ") != 0) {
         return false;

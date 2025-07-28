@@ -5,80 +5,93 @@
 #include "app_user_service.h"
 #include "app_auth_service.h"
 
-void UserService::register_endpoints(httplib::Server* server)
+void UserService::register_endpoints(drogon::HttpAppFramework* server)
 {
-    if (!server) return;
-    server->Post("/login", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: POST /login");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = login_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_login();
-        if (!ok) metrics_->count_failed_request_login();
-        if (ok)  metrics_->store_latency_request_login(std::chrono::duration<double>(end - start).count());
-    })
-    .Post("/user/register", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: POST /user/register");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = user_register_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_user_register();
-        if (!ok) metrics_->count_failed_request_user_register();
-        if (ok)  metrics_->store_latency_request_user_register(std::chrono::duration<double>(end - start).count());
-    })
-    .Get("/user/get/:id", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: GET /user/get/:id");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = user_get_id_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_user_get_id();
-        if (!ok) metrics_->count_failed_request_user_get_id();
-        if (ok)  metrics_->store_latency_request_user_get_id(std::chrono::duration<double>(end - start).count());
-    })
-    .Get("/user/search", [this](const auto& req, auto& res) {
-        LOGGER_DEBUG("handler: GET /user/search");
-        auto start = std::chrono::steady_clock::now();
-        bool ok    = user_search_handler(req, res);
-        auto end   = std::chrono::steady_clock::now();
-        metrics_->count_request_user_search();
-        if (!ok) metrics_->count_failed_request_user_search();
-        if (ok)  metrics_->store_latency_request_user_search(std::chrono::duration<double>(end - start).count());
-    });
-    LOGGER_INFOR("endpoints registered: POST /login -- POST /user/register -- GET /user/get/:id -- GET /user/search");
+    if (server == nullptr) return;
+
+    server->registerHandler("/login",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
+            LOGGER_DEBUG("handler: POST /login");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = login_handler(req, res);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_login();
+            if (!ok) metrics_->count_failed_request_login();
+            if (ok)  metrics_->store_latency_request_login(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Post});
+
+    server->registerHandler("/user/register",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
+            LOGGER_DEBUG("handler: POST /user/register");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = user_register_handler(req, res);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_user_register();
+            if (!ok) metrics_->count_failed_request_user_register();
+            if (ok)  metrics_->store_latency_request_user_register(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Post});
+
+    server->registerHandlerViaRegex("/user/get/([0-9a-fA-F-]{36})",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback, const std::string& requested_id) {
+            LOGGER_DEBUG("handler: GET /user/get/:id");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = user_get_id_handler(req, res, requested_id);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_user_get_id();
+            if (!ok) metrics_->count_failed_request_user_get_id();
+            if (ok)  metrics_->store_latency_request_user_get_id(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Get});
+
+    server->registerHandler("/user/search",
+        [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
+            LOGGER_DEBUG("handler: GET /user/search");
+            auto res = drogon::HttpResponse::newHttpResponse(drogon::HttpStatusCode::k400BadRequest, drogon::ContentType::CT_NONE);
+
+            auto start = std::chrono::steady_clock::now();
+            bool ok    = user_search_handler(req, res);
+            auto end   = std::chrono::steady_clock::now();
+            metrics_->count_request_user_search();
+            if (!ok) metrics_->count_failed_request_user_search();
+            if (ok)  metrics_->store_latency_request_user_search(std::chrono::duration<double>(end - start).count());
+
+            callback(res);
+        },
+        {drogon::HttpMethod::Get});
 }
 
-bool UserService::pre_routing_validation(const httplib::Request& req)
+bool UserService::login_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res)
 {
-    if (req.path.starts_with("/user/get/")
-    ||  req.path == "/user/register"
-    ||  req.path == "/user/search"
-    ||  req.path == "/login") {
-        return true;
-    }
-    return false;
-}
-
-bool UserService::login_handler(const httplib::Request& req, httplib::Response& res)
-{
-    auto body = nlohmann::json::parse(req.body);
+    auto body = nlohmann::json::parse(req->getBody());
 
     if (!body.contains("id")
     ||  !body.contains("password")) {
         LOGGER_ERROR(std::format("login_handler: request params does not contain 'id' and/or 'password'"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!body["id"].is_string()
     ||  !body["password"].is_string()) {
         LOGGER_ERROR(std::format("login_handler: request params 'id' and 'password' should be a string"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (!AuthService::is_valid_uuid(body["id"].get<std::string>())) {
         LOGGER_ERROR(std::format("login_handler: request param 'id' is not an UUID format"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -86,8 +99,9 @@ bool UserService::login_handler(const httplib::Request& req, httplib::Response& 
         auto err = std::format("login_handler: database service is unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
@@ -102,11 +116,13 @@ bool UserService::login_handler(const httplib::Request& req, httplib::Response& 
         } else {
             if (rv.token.empty()) {
                 // пользователь не найден
-                res.status = httplib::StatusCode::NotFound_404;
+                res->setStatusCode(drogon::HttpStatusCode::k404NotFound);
                 return false;
             } else {
                 nlohmann::json j = {{"token", rv.token}};
-                res.set_content(j.dump(), "application/json");
+                res->setStatusCode(drogon::HttpStatusCode::k200OK);
+                res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+                res->setBody(j.dump());
                 return true;
             }
         }
@@ -117,15 +133,16 @@ bool UserService::login_handler(const httplib::Request& req, httplib::Response& 
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }
 
-bool UserService::user_register_handler(const httplib::Request& req, httplib::Response& res)
+bool UserService::user_register_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res)
 {
-    auto body = nlohmann::json::parse(req.body);
+    auto body = nlohmann::json::parse(req->getBody());
 
     if (!body.contains("password")
     ||  !body.contains("first_name")
@@ -134,7 +151,6 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
     ||  !body.contains("biography")
     ||  !body.contains("city")) {
         LOGGER_ERROR(std::format("user_register_handler: request params does not contain 'password', 'first_name', 'second_name', 'birthdate', 'biography' and/or 'city'"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -145,14 +161,12 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
     ||  !body["biography"].is_string()
     ||  !body["city"].is_string()) {
         LOGGER_ERROR(std::format("user_register_handler: request params 'password', 'first_name', 'second_name', 'birthdate', 'biography' and 'city' should be a string"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
     if (body["password"].get<std::string>().length() < 8) {
         // минимальная длина 8 символов
         LOGGER_ERROR(std::format("user_register_handler: request param 'password' should contain at least 8 characters"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -163,7 +177,6 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
         if (ss.fail() || t.tm_year < 0 || t.tm_year > 107) {
             // 18лет (с 2007 г.д.), 2007 - 1900 = 107
             LOGGER_ERROR(std::format("user_register_handler: request param 'birthdate' is invalid"));
-            res.status = httplib::StatusCode::BadRequest_400;
             return false;
         }
     }
@@ -172,8 +185,9 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
         auto err = std::format("user_register_handler: database service is unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
@@ -195,7 +209,9 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
             } else {
                 // успешная регистрация пользователя
                 nlohmann::json j = {{"user_id", rv.user.value().id}};
-                res.set_content(j.dump(), "application/json");
+                res->setStatusCode(drogon::HttpStatusCode::k200OK);
+                res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+                res->setBody(j.dump());
                 return true;
             }
         }
@@ -206,23 +222,17 @@ bool UserService::user_register_handler(const httplib::Request& req, httplib::Re
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }
 
-bool UserService::user_get_id_handler(const httplib::Request& req, httplib::Response& res)
+bool UserService::user_get_id_handler(const drogon::HttpRequestPtr& /*req*/, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
-    if (!req.path_params.contains("id")) {
-        LOGGER_ERROR(std::format("user_get_id_handler: request params does not contain 'id'"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
-    }
-
-    if (!AuthService::is_valid_uuid(req.path_params.at("id"))) {
+    if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("user_get_id_handler: request param 'id' is not an UUID format"));
-        res.status = httplib::StatusCode::BadRequest_400;
         return false;
     }
 
@@ -230,62 +240,78 @@ bool UserService::user_get_id_handler(const httplib::Request& req, httplib::Resp
         auto err = std::format("user_get_id_handler: database service is unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
-    const std::string user_id{req.path_params.at("id")};
-
     std::string err{};
     try {
-        auto rv = db_->get_user(user_id);
+        auto rv = db_->get_user(requested_id);
         if (!rv.error_str.empty()) {
             err = rv.error_str;
         } else {
             if (!rv.user.has_value()) {
                 // анкета не найдена
-                res.status = httplib::StatusCode::NotFound_404;
+                res->setStatusCode(drogon::HttpStatusCode::k404NotFound);
                 return false;
             } else {
                 // успешное получение анкеты пользователя
-                res.set_content(serialize_user(rv.user.value()), "application/json");
+                res->setStatusCode(drogon::HttpStatusCode::k200OK);
+                res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+                res->setBody(serialize_user(rv.user.value()));
                 return true;
             }
         }
     } catch (std::exception& ex) {
-        err = std::format("user_get_id_handler exception: {} (user_id: {})", ex.what(), user_id);
+        err = std::format("user_get_id_handler exception: {} (user_id: {})", ex.what(), requested_id);
     }
 
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }
 
-bool UserService::user_search_handler(const httplib::Request& req, httplib::Response& res)
+bool UserService::user_search_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res)
 {
-    if (!req.has_param("first_name")
-    ||  !req.has_param("last_name")) {
-        LOGGER_ERROR(std::format("user_search_handler: request params does not contain 'first_name' and/or 'last_name'"));
-        res.status = httplib::StatusCode::BadRequest_400;
-        return false;
+    std::string req_fname;
+    std::string req_sname;
+
+    {
+        auto v = req->getOptionalParameter<std::string>("first_name");
+        if (!v.has_value()) {
+            LOGGER_ERROR(std::format("user_search_handler: request params does not contain 'first_name'"));
+            return false;
+        }
+        req_fname = v.value();
+    }
+    {
+        auto v = req->getOptionalParameter<std::string>("last_name");
+        if (!v.has_value()) {
+            LOGGER_ERROR(std::format("user_search_handler: request params does not contain 'last_name'"));
+            return false;
+        }
+        req_sname = v.value();
     }
 
     if (!db_) {
         auto err = std::format("user_search_handler: database service is unavailable");
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 503}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::ServiceUnavailable_503;
+        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
         return false;
     }
 
-    const std::string fname{req.get_param_value("first_name") + "%"};
-    const std::string sname{req.get_param_value("last_name") + "%"};
+    const std::string fname{req_fname + "%"};
+    const std::string sname{req_sname + "%"};
 
     std::string err{};
     try {
@@ -293,7 +319,9 @@ bool UserService::user_search_handler(const httplib::Request& req, httplib::Resp
         if (!rv.error_str.empty()) {
             err = rv.error_str;
         } else {
-            res.set_content(serialize_users(rv.users), "application/json");
+            res->setStatusCode(drogon::HttpStatusCode::k200OK);
+            res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+            res->setBody(serialize_users(rv.users));
             return true;
         }
     } catch (std::exception& ex) {
@@ -303,8 +331,9 @@ bool UserService::user_search_handler(const httplib::Request& req, httplib::Resp
     if (!err.empty()) {
         LOGGER_ERROR(err);
         nlohmann::json j = {{"code", 500}, {"message", err}};
-        res.set_content(j.dump(), "application/json");
-        res.status = httplib::StatusCode::InternalServerError_500;
+        res->setStatusCode(drogon::HttpStatusCode::k500InternalServerError);
+        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
+        res->setBody(j.dump());
     }
     return false;
 }

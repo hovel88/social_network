@@ -19,7 +19,7 @@ const int config_max::http_threads_count = 10;
 const int config_def::http_threads_count = 1;
 const int config_min::http_threads_count = 1;
 
-const int config_max::http_queue_capacity = 4096;
+const int config_max::http_queue_capacity = 100000;
 const int config_def::http_queue_capacity = 1024;
 const int config_min::http_queue_capacity = 1;
 

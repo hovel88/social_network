@@ -1,6 +1,6 @@
 #pragma once
 
-#include <httplib.h>
+#include <drogon/drogon.h>
 #include "logger/logger.h"
 #include "app_metrics.h"
 #include "app_connection_pool.h"
@@ -29,8 +29,7 @@ public:
         cache_(std::move(cache)),
         auth_(std::move(auth)) {}
 
-    void register_endpoints(httplib::Server* server);
-    bool pre_routing_validation(const httplib::Request& req);
+    void register_endpoints(drogon::HttpAppFramework* server);
 
 private:
     std::shared_ptr<Logging::Logger> logger_{nullptr};
@@ -39,11 +38,11 @@ private:
     std::shared_ptr<CacheService>    cache_{nullptr};
     std::shared_ptr<AuthService>     auth_{nullptr};
 
-    bool post_get_id_handler(const httplib::Request& req, httplib::Response& res);
-    bool post_delete_id_handler(const httplib::Request& req, httplib::Response& res);
-    bool post_create_handler(const httplib::Request& req, httplib::Response& res);
-    bool post_update_handler(const httplib::Request& req, httplib::Response& res);
-    bool post_feed_handler(const httplib::Request& req, httplib::Response& res);
+    bool post_get_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id);
+    bool post_delete_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id);
+    bool post_create_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res);
+    bool post_update_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res);
+    bool post_feed_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res);
 
     static std::vector<DatabaseService::Post> get_page(const std::vector<DatabaseService::Post>& feed, size_t offset, size_t limit);
     static std::string serialize_posts(const std::vector<DatabaseService::Post>& posts);
