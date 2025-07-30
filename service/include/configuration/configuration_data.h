@@ -21,6 +21,11 @@ namespace config_def {
     extern const std::string pgsql_login;
     extern const std::string pgsql_password;
 
+    extern const std::string tarantool_url;
+    extern const uint16_t    tarantool_port;
+    extern const std::string tarantool_login;
+    extern const std::string tarantool_password;
+
     extern const std::string http_listening;
     extern const uint16_t    http_port;
     extern const int         http_threads_count;
@@ -53,6 +58,14 @@ namespace config_data {
 
         pgsql_s              pgsql_master;
         std::vector<pgsql_s> pgsql_replica;
+
+        struct tarantool_s {
+            std::string url;
+            std::string login;
+            std::string password;
+        };
+
+        tarantool_s tarantool;
 
         std::string http_listening;
         int         http_threads_count;

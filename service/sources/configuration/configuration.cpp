@@ -62,19 +62,28 @@ void Configuration::show_configuration() const
 {
     std::stringstream ss;
     ss << "configuration:";
+
     ss << "\n  pgsql_master.url="       << std::quoted(current_configuration_.pgsql_master.url);
-    // ss << "\n  pgsql_master.login="            << std::string(current_configuration_.pgsql_master.login.size(), '*');
-    // ss << "\n  pgsql_master.password="         << std::string(current_configuration_.pgsql_master.password.size(), '*');
+    // ss << "\n  pgsql_master.login="     << std::string(current_configuration_.pgsql_master.login.size(), '*');
+    // ss << "\n  pgsql_master.password="  << std::string(current_configuration_.pgsql_master.password.size(), '*');
     ss << "\n  pgsql_master.login="     << current_configuration_.pgsql_master.login;
     ss << "\n  pgsql_master.password="  << current_configuration_.pgsql_master.password;
+
 for (int i = 0; const auto& replica : current_configuration_.pgsql_replica) {
     ss << "\n  pgsql_replica." << i << ".url="       << std::quoted(replica.url);
-    // ss << "\n  pgsql_replica." << i << ".login="            << std::string(replica.login.size(), '*');
-    // ss << "\n  pgsql_replica." << i << ".password="         << std::string(replica.password.size(), '*');
+    // ss << "\n  pgsql_replica." << i << ".login="     << std::string(replica.login.size(), '*');
+    // ss << "\n  pgsql_replica." << i << ".password="  << std::string(replica.password.size(), '*');
     ss << "\n  pgsql_replica." << i << ".login="     << replica.login;
     ss << "\n  pgsql_replica." << i << ".password="  << replica.password;
     ++i;
 }
+
+    ss << "\n  tarantool.url="       << std::quoted(current_configuration_.tarantool.url);
+    // ss << "\n  tarantool.login="     << std::string(current_configuration_.tarantool.login.size(), '*');
+    // ss << "\n  tarantool.password="  << std::string(current_configuration_.tarantool.password.size(), '*');
+    ss << "\n  tarantool.login="     << current_configuration_.tarantool.login;
+    ss << "\n  tarantool.password="  << current_configuration_.tarantool.password;
+
     ss << "\n  http.listening="         << std::quoted(current_configuration_.http_listening);
     ss << "\n  http.threads_count="     << current_configuration_.http_threads_count;
     ss << "\n  http.queue_capacity="    << current_configuration_.http_queue_capacity;
@@ -145,6 +154,16 @@ void Configuration::apply_(std::shared_ptr<cxxopts::ParseResult> cli_opts)
             auto val = StringHelpers::trim(env.value());
             current_configuration_.pgsql_replica.push_back({});
             current_configuration_.pgsql_replica.back().url = val;
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+        }
+    }
+
+    {
+        const std::string key("TARANTOOL_URL");
+        if (EnvironmentHelpers::has(key)) {
+            auto env = EnvironmentHelpers::get(key);
+            auto val = StringHelpers::trim(env.value());
+            current_configuration_.tarantool.url = val;
             LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }

@@ -12,6 +12,11 @@ const std::string config_def::pgsql_login{"postgres"};
 const std::string config_def::pgsql_password{""};
 const uint16_t config_def::pgsql_port = 5432;
 
+const std::string config_def::tarantool_url{"tcp://localhost:3301"};
+const std::string config_def::tarantool_login{"guest"};
+const std::string config_def::tarantool_password{""};
+const uint16_t config_def::tarantool_port = 3301;
+
 const std::string config_def::http_listening{"0.0.0.0:6000"};
 const uint16_t config_def::http_port = 6000;
 
@@ -45,6 +50,10 @@ void config_data::config_s::clear()
     pgsql_master.password.clear();
 
     pgsql_replica.clear();
+
+    tarantool.url = config_def::tarantool_url;
+    tarantool.login.clear();
+    tarantool.password.clear();
 
     http_listening      = config_def::http_listening;
     http_threads_count  = config_def::http_threads_count;
@@ -177,6 +186,59 @@ std::list<std::string> config_data::config_s::validate()
         if (replica.login.empty())    replica.login    = config_def::pgsql_login;
         if (replica.password.empty()) replica.password = config_def::pgsql_password;
     }
+
+    try {
+        if (tarantool.url.find("://") == std::string::npos) {
+            auto endpoint_with_scheme = std::format("tcp://{}", tarantool.url);
+            tarantool.url.swap(endpoint_with_scheme);
+        }
+        UrlHelpers::Url url(tarantool.url);
+
+        // верификация схемы URL
+
+        // верификация номера порта
+        NetHelpers::SocketAddress sock_addr(std::format("{}:{}", url.get_host(), url.get_specified_port()));
+        if (sock_addr.port() == 0) url.set_port(config_def::tarantool_port);
+
+        // верификация сегментов пути URL
+        url.set_fragment("");
+        url.set_path("");
+
+        // верификация "login:password" части URL
+        // переупаковываем URL, убирая "чувствительную" часть
+        std::string login;
+        std::string password;
+        std::string userinfo = url.get_user_info(); // "login:password"
+        if (!userinfo.empty()) {
+            auto colon = userinfo.find(':');
+            if (colon != std::string::npos) {
+                login    = userinfo.substr(0, colon);
+                password = userinfo.substr(colon+1);
+            } else {
+                login = userinfo;
+            }
+        }
+        if (tarantool.login.empty()) {
+            tarantool.login = !login.empty() ? login : config_def::tarantool_login;
+        }
+        if (tarantool.password.empty()) {
+            tarantool.password = !password.empty() ? password : config_def::tarantool_password;
+        }
+        url.set_user_info("");
+        tarantool.url = url.to_string();
+    }
+    catch (NetHelpers::DnsException& ex) {
+        errors.push_back(std::format("validation error 'tarantool.endpoint={}': {}",
+            tarantool.url, ex.what()));
+    }
+    catch (std::exception& ex) {
+        errors.push_back(std::format("validation error 'tarantool.endpoint={}': {}",
+            tarantool.url, ex.what()));
+        tarantool.url = config_def::tarantool_url;
+    }
+
+    if (tarantool.login.empty())    tarantool.login    = config_def::tarantool_login;
+    if (tarantool.password.empty()) tarantool.password = config_def::tarantool_password;
 
     try {
         NetHelpers::SocketAddress sock_addr(http_listening);
