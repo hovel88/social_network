@@ -1,0 +1,77 @@
+networks:
+  net:
+    driver: bridge
+
+# volumes:
+#   tarantool_storage:
+
+services:
+  social_srv:
+    image: ${ENV_SOCIAL_SERVICE_IMAGE}
+    build:
+      context: ./service/
+      dockerfile: Dockerfile
+    container_name: "social_srv"
+    hostname: "social_srv"
+    # restart: on-failure
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      tarantool_db:
+        condition: service_started
+    environment:
+      - PGSQL_MASTER_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_db:5432/postgres
+      - TARANTOOL_URL=tcp://tntuser:tntpass@tarantool_db:3301
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=${ENV_HTTP_QUEUE_CAPACITY}
+      - HTTP_THREADS_COUNT=${ENV_HTTP_THREADS_COUNT}
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
+    ports:
+      - ${ENV_HTTP_EXTERNAL_PORT}:6000
+      - ${ENV_PROMETHEUS_EXTERNAL_PORT}:6001   # для метрик Prometheus
+
+
+  postgres_db:
+    image: ${ENV_POSTGRES_DB_IMAGE}
+    container_name: "postgres_db"
+    hostname: "postgres_db"
+    # restart: on-failure
+    environment:
+      - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
+    volumes:
+      - ./postgres_db:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - net
+    ports:
+      - 15432:5432
+
+
+  tarantool_db:
+    # image: tarantool/tarantool:2.11
+    # image: tarantool/tarantool:3.3.2
+    build:
+      context: ./tarantool/
+      dockerfile: Dockerfile
+    container_name: "tarantool_db"
+    hostname: "tarantool_db"
+    # restart: on-failure
+    # depends_on:
+    #   postgres_db:
+    #     condition: service_healthy
+    volumes:
+      - ./tarantool/scripts:/opt/tarantool
+      # - ./tarantool/tarantool_volume:/var/lib/tarantool
+      # - tarantool_storage:/var/lib/tarantool
+    networks:
+      - net
+    ports:
+      - "3301:3301"
+      - "8081:8081" # админка
+    command: tarantool /opt/tarantool/udf.lua
