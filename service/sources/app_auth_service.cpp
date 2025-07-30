@@ -15,24 +15,32 @@ bool AuthService::authenticate(const drogon::HttpRequestPtr& req, std::string& u
         return false;
     }
 
-    if (!db_) {
-        return false;
-    }
-
     std::string err{};
-    try {
+    if (inmem_) {
+        auto rv = inmem_->authenticate_user(user_id);
+        if (!rv.error_str.empty()) {
+            err = rv.error_str;
+        } else {
+            return rv.authenticated;
+        }
+
+        if (!err.empty()) {
+            LOGGER_ERROR(err);
+        }
+    }
+    if (db_) {
+        std::string err{};
         auto rv = db_->authenticate_user(user_id);
         if (!rv.error_str.empty()) {
             err = rv.error_str;
         } else {
             return rv.authenticated;
         }
-    } catch (std::exception& ex) {
-        err = std::format("authenticate exception: {} (user_id: {})", ex.what(), user_id);
+
+        if (!err.empty()) {
+            LOGGER_ERROR(err);
+        }
     }
 
-    if (!err.empty()) {
-        LOGGER_ERROR(err);
-    }
     return false;
 }

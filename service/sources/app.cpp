@@ -81,32 +81,6 @@ static inline const char* status_message(drogon::HttpStatusCode status) {
     }
 }
 
-#if 0
-static std::string time_local_str_()
-{
-    auto p = std::chrono::system_clock::now();
-    auto t = std::chrono::system_clock::to_time_t(p);
-
-    std::stringstream ss;
-    //                                       08/Apr/2025:12:06:54 +0000
-    ss << std::put_time(std::localtime(&t), "%d/%b/%Y:%H:%M:%S %z");
-    return ss.str();
-}
-
-static std::string time_gmt_str_()
-{
-    auto p = std::chrono::system_clock::now();
-    auto t = std::chrono::system_clock::to_time_t(p);
-    std::tm gmt_tm;
-    gmtime_r(&t, &gmt_tm);
-
-    std::stringstream ss;
-    //                                       Sat, 01 Jan 2005 11:00:00 GMT
-    ss << std::put_time(std::localtime(&t), "%a, %d %b %Y %H:%M:%S GMT");
-    return ss.str();
-}
-#endif
-
 //-----------------------------------------------------------------------------
 
 
@@ -328,19 +302,20 @@ void App::http_start()
         http_server_->addListener(sock_addr.host().to_string(), sock_addr.port());
 
         // создаем сервисы
-        service_cache    = std::make_shared<CacheService>(CACHE_CAPACITY, std::chrono::seconds(CACHE_TTL_SEC));
-        service_database = std::make_shared<DatabaseService>(logger_, metrics_, db_pool_);
-        service_auth     = std::make_shared<AuthService>(logger_, metrics_, service_database);
-        service_user     = std::make_unique<UserService>(logger_, metrics_, service_database);
-        service_friend   = std::make_unique<FriendService>(logger_, metrics_, service_database, service_cache, service_auth);
-        service_post     = std::make_unique<PostService>(logger_, metrics_, service_database, service_cache, service_auth);
-        service_dialog   = std::make_unique<DialogService>(logger_, metrics_, service_database, service_auth);
+        service_cache_    = std::make_shared<CacheService>(CACHE_CAPACITY, std::chrono::seconds(CACHE_TTL_SEC));
+        service_database_ = std::make_shared<DatabaseService>(logger_, metrics_, db_pool_);
+        service_inmem_    = std::make_shared<InMemService>(logger_, conf_);
+        service_auth_     = std::make_shared<AuthService>(logger_, metrics_, service_database_, service_inmem_);
+        service_user_     = std::make_unique<UserService>(logger_, metrics_, service_database_);
+        service_friend_   = std::make_unique<FriendService>(logger_, metrics_, service_database_, service_cache_, service_auth_);
+        service_post_     = std::make_unique<PostService>(logger_, metrics_, service_database_, service_cache_, service_auth_);
+        service_dialog_   = std::make_unique<DialogService>(logger_, metrics_, service_database_, service_auth_);
 
         // регистрируем сервисы в HTTP сервере
-        service_user->register_endpoints(http_server_.get());
-        service_friend->register_endpoints(http_server_.get());
-        service_post->register_endpoints(http_server_.get());
-        service_dialog->register_endpoints(http_server_.get());
+        service_user_->register_endpoints(http_server_.get());
+        service_friend_->register_endpoints(http_server_.get());
+        service_post_->register_endpoints(http_server_.get());
+        service_dialog_->register_endpoints(http_server_.get());
 
         std::string info;
         {

@@ -87,3 +87,14 @@ target_link_libraries(${SERVICE_SRC_LIB}
     PRIVATE     prometheus-cpp::core
                 prometheus-cpp::pull
 )
+
+include(FetchContent)
+FetchContent_Declare(
+    tntcxx
+    GIT_REPOSITORY https://github.com/tarantool/tntcxx.git
+)
+FetchContent_MakeAvailable(tntcxx)
+
+target_link_libraries(${SERVICE_SRC_LIB}
+    PUBLIC      tntcxx::tntcxx
+)

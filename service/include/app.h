@@ -7,6 +7,7 @@
 #include "app_friend_service.h"
 #include "app_post_service.h"
 #include "app_dialog_service.h"
+#include "app_inmem_service.h"
 #include "configuration/configuration.h"
 #include "helpers/thread_pool.h"
 
@@ -40,13 +41,14 @@ private:
     OnLivenessCheckFunc                       liveness_check_cb_{};
     OnReadinessCheckFunc                      readiness_check_cb_{};
 
-    std::shared_ptr<CacheService>    service_cache{nullptr};
-    std::shared_ptr<DatabaseService> service_database{nullptr};
-    std::shared_ptr<AuthService>     service_auth{nullptr};
-    std::unique_ptr<UserService>     service_user{nullptr};
-    std::unique_ptr<FriendService>   service_friend{nullptr};
-    std::unique_ptr<PostService>     service_post{nullptr};
-    std::unique_ptr<DialogService>   service_dialog{nullptr};
+    std::shared_ptr<CacheService>    service_cache_{nullptr};
+    std::shared_ptr<DatabaseService> service_database_{nullptr};
+    std::shared_ptr<InMemService>    service_inmem_{nullptr};
+    std::shared_ptr<AuthService>     service_auth_{nullptr};
+    std::unique_ptr<UserService>     service_user_{nullptr};
+    std::unique_ptr<FriendService>   service_friend_{nullptr};
+    std::unique_ptr<PostService>     service_post_{nullptr};
+    std::unique_ptr<DialogService>   service_dialog_{nullptr};
 
     std::unique_ptr<prometheus::Exposer> exposer_{nullptr};
     std::shared_ptr<Metrics>             metrics_{nullptr};

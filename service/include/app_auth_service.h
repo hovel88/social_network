@@ -5,6 +5,7 @@
 #include "logger/logger.h"
 #include "app_metrics.h"
 #include "app_database_service.h"
+#include "app_inmem_service.h"
 
 class AuthService
 {
@@ -18,10 +19,12 @@ public:
 
     explicit AuthService(std::shared_ptr<Logging::Logger> logger,
                          std::shared_ptr<Metrics> metrics,
-                         std::shared_ptr<DatabaseService> db)
+                         std::shared_ptr<DatabaseService> db,
+                         std::shared_ptr<InMemService> inmem)
     :   logger_(std::move(logger)),
         metrics_(std::move(metrics)),
-        db_(std::move(db)) {}
+        db_(std::move(db)),
+        inmem_(std::move(inmem)) {}
 
     bool authenticate(const drogon::HttpRequestPtr& req, std::string& user_id);
     static bool is_valid_uuid(const std::string& id) {
@@ -35,4 +38,5 @@ private:
     std::shared_ptr<Logging::Logger> logger_{nullptr};
     std::shared_ptr<Metrics>         metrics_{nullptr};
     std::shared_ptr<DatabaseService> db_{nullptr};
+    std::shared_ptr<InMemService>    inmem_{nullptr};
 };
