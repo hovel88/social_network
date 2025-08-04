@@ -26,7 +26,7 @@ public:
         db_(std::move(db)),
         inmem_(std::move(inmem)) {}
 
-    bool authenticate(const drogon::HttpRequestPtr& req, std::string& user_id);
+    bool authenticate(std::string& user_id);
     static bool is_valid_uuid(const std::string& id) {
         static const std::regex uuid_regex(
             "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"

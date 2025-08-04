@@ -21,7 +21,7 @@ void DialogService::register_endpoints(drogon::HttpAppFramework* server)
 
             callback(res);
         },
-        {drogon::HttpMethod::Post});
+        {drogon::HttpMethod::Post, "MiddlewareAuth"});
 
     server->registerHandlerViaRegex(R"(/dialog/([0-9a-fA-F-]{36})/list)",
         [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback, const std::string& requested_id) {
@@ -37,11 +37,12 @@ void DialogService::register_endpoints(drogon::HttpAppFramework* server)
 
             callback(res);
         },
-        {drogon::HttpMethod::Get});
+        {drogon::HttpMethod::Get, "MiddlewareAuth"});
 }
 
 bool DialogService::dialog_send_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
+    const std::string user_id = req->attributes()->get<std::string>("user_id");
     auto body = nlohmann::json::parse(req->getBody());
 
     if (!body.contains("text")) {
@@ -59,31 +60,14 @@ bool DialogService::dialog_send_handler(const drogon::HttpRequestPtr& req, drogo
         return false;
     }
 
-    if (!db_ || !auth_) {
-        auto err = std::format("dialog_send_handler: database service and/or authentication service are unavailable");
-        LOGGER_ERROR(err);
-        nlohmann::json j = {{"code", 503}, {"message", err}};
-        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
-        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
-        res->setBody(j.dump());
-        return false;
-    }
-
-    std::string id;
-    if (!auth_->authenticate(req, id)) {
-        LOGGER_ERROR(std::format("dialog_send_handler: request from unauthorized user"));
-        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
-        return false;
-    }
-
-    if (id == requested_id) {
+    if (user_id == requested_id) {
         LOGGER_ERROR(std::format("dialog_send_handler: cannot make dialog with yourself"));
         return false;
     }
 
     const std::string message{body["text"].get<std::string>()};
     const std::string to_user_id{requested_id};
-    const std::string from_user_id{id};
+    const std::string from_user_id{user_id};
 
     std::string err{};
     try {
@@ -111,35 +95,20 @@ bool DialogService::dialog_send_handler(const drogon::HttpRequestPtr& req, drogo
 
 bool DialogService::dialog_list_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
+    const std::string user_id = req->attributes()->get<std::string>("user_id");
+
     if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("dialog_list_handler: request param 'id' is not an UUID format"));
         return false;
     }
 
-    if (!db_ || !auth_) {
-        auto err = std::format("dialog_list_handler: database service and/or authentication service are unavailable");
-        LOGGER_ERROR(err);
-        nlohmann::json j = {{"code", 503}, {"message", err}};
-        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
-        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
-        res->setBody(j.dump());
-        return false;
-    }
-
-    std::string id;
-    if (!auth_->authenticate(req, id)) {
-        LOGGER_ERROR(std::format("dialog_list_handler: request from unauthorized user"));
-        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
-        return false;
-    }
-
-    if (id == requested_id) {
+    if (user_id == requested_id) {
         LOGGER_ERROR(std::format("dialog_list_handler: cannot make dialog with yourself"));
         return false;
     }
 
     const std::string to_user_id{requested_id};
-    const std::string from_user_id{id};
+    const std::string from_user_id{user_id};
 
     std::string err{};
     try {

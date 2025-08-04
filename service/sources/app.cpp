@@ -10,6 +10,7 @@
 #include "helpers/socket_address.h"
 #include "helpers/thread.h"
 #include "app.h"
+#include "middleware_auth.h"
 
 static inline const char* status_message(drogon::HttpStatusCode status) {
     switch (status) {
@@ -196,6 +197,16 @@ void App::http_start()
         metrics_ = std::make_shared<Metrics>(db_host_tags);
         exposer_->RegisterCollectable(metrics_->registry());
 
+        // создаем сервисы
+        service_cache_    = std::make_shared<CacheService>(CACHE_CAPACITY, std::chrono::seconds(CACHE_TTL_SEC));
+        service_database_ = std::make_shared<DatabaseService>(logger_, metrics_, db_pool_);
+        service_inmem_    = std::make_shared<InMemService>(logger_, conf_);
+        service_auth_     = std::make_shared<AuthService>(logger_, metrics_, service_database_, service_inmem_);
+        service_user_     = std::make_unique<UserService>(logger_, metrics_, service_database_);
+        service_friend_   = std::make_unique<FriendService>(logger_, metrics_, service_database_, service_cache_);
+        service_post_     = std::make_unique<PostService>(logger_, metrics_, service_database_, service_cache_);
+        service_dialog_   = std::make_unique<DialogService>(logger_, metrics_, service_inmem_);
+
         // регистрируем и настраиваем HTTP-сервер
         http_server_->setBeforeListenSockOptCallback([this](int sock) {
             const int enable = 1;
@@ -257,6 +268,9 @@ void App::http_start()
         // количество одновременно поддерживаемых подключений
         .setMaxConnectionNum(conf_->config().http_queue_capacity);
 
+        // middleware
+        http_server_->registerFilter(MiddlewareAuth::create(service_auth_));
+
         // обработчики
         http_server_->registerHandler("/livez",
             [this](const drogon::HttpRequestPtr& /*req*/, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
@@ -300,16 +314,6 @@ void App::http_start()
 
         NetHelpers::SocketAddress sock_addr(conf_->config().http_listening);
         http_server_->addListener(sock_addr.host().to_string(), sock_addr.port());
-
-        // создаем сервисы
-        service_cache_    = std::make_shared<CacheService>(CACHE_CAPACITY, std::chrono::seconds(CACHE_TTL_SEC));
-        service_database_ = std::make_shared<DatabaseService>(logger_, metrics_, db_pool_);
-        service_inmem_    = std::make_shared<InMemService>(logger_, conf_);
-        service_auth_     = std::make_shared<AuthService>(logger_, metrics_, service_database_, service_inmem_);
-        service_user_     = std::make_unique<UserService>(logger_, metrics_, service_database_);
-        service_friend_   = std::make_unique<FriendService>(logger_, metrics_, service_database_, service_cache_, service_auth_);
-        service_post_     = std::make_unique<PostService>(logger_, metrics_, service_database_, service_cache_, service_auth_);
-        service_dialog_   = std::make_unique<DialogService>(logger_, metrics_, service_database_, service_auth_);
 
         // регистрируем сервисы в HTTP сервере
         service_user_->register_endpoints(http_server_.get());

@@ -2,6 +2,7 @@
 #include <ctime>
 #include <nlohmann/json.hpp>
 #include "app_friend_service.h"
+#include "app_auth_service.h"
 
 void FriendService::register_endpoints(drogon::HttpAppFramework* server)
 {
@@ -21,7 +22,7 @@ void FriendService::register_endpoints(drogon::HttpAppFramework* server)
 
             callback(res);
         },
-        {drogon::HttpMethod::Put});
+        {drogon::HttpMethod::Put, "MiddlewareAuth"});
 
     server->registerHandlerViaRegex(R"(/friend/delete/([0-9a-fA-F-]{36}))",
         [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback, const std::string& requested_id) {
@@ -37,40 +38,24 @@ void FriendService::register_endpoints(drogon::HttpAppFramework* server)
 
             callback(res);
         },
-        {drogon::HttpMethod::Put});
+        {drogon::HttpMethod::Put, "MiddlewareAuth"});
 }
 
 bool FriendService::friend_set_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
+    const std::string user_id = req->attributes()->get<std::string>("user_id");
+
     if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("friend_set_id_handler: request param 'id' is not an UUID format"));
         return false;
     }
 
-    if (!db_ || !auth_) {
-        auto err = std::format("friend_set_id_handler: database service and/or authentication service are unavailable");
-        LOGGER_ERROR(err);
-        nlohmann::json j = {{"code", 503}, {"message", err}};
-        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
-        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
-        res->setBody(j.dump());
-        return false;
-    }
-
-    std::string id;
-    if (!auth_->authenticate(req, id)) {
-        LOGGER_ERROR(std::format("friend_set_id_handler: request from unauthorized user"));
-        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
-        return false;
-    }
-
-    if (id == requested_id) {
+    if (user_id == requested_id) {
         LOGGER_ERROR(std::format("friend_set_id_handler: cannot add yourself to friends"));
         return false;
     }
 
     const std::string friend_id{requested_id};
-    const std::string user_id{id};
 
     std::string err{};
     try {
@@ -110,35 +95,19 @@ bool FriendService::friend_set_id_handler(const drogon::HttpRequestPtr& req, dro
 
 bool FriendService::friend_delete_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
+    const std::string user_id = req->attributes()->get<std::string>("user_id");
+
     if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("friend_delete_id_handler: request param 'id' is not an UUID format"));
         return false;
     }
 
-    if (!db_ || !auth_) {
-        auto err = std::format("friend_delete_id_handler: database service and/or authentication service are unavailable");
-        LOGGER_ERROR(err);
-        nlohmann::json j = {{"code", 503}, {"message", err}};
-        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
-        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
-        res->setBody(j.dump());
-        return false;
-    }
-
-    std::string id;
-    if (!auth_->authenticate(req, id)) {
-        LOGGER_ERROR(std::format("friend_delete_id_handler: request from unauthorized user"));
-        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
-        return false;
-    }
-
-    if (id == requested_id) {
+    if (user_id == requested_id) {
         LOGGER_ERROR(std::format("friend_delete_id_handler: cannot delete yourself from friends"));
         return false;
     }
 
     const std::string friend_id{requested_id};
-    const std::string user_id{id};
 
     std::string err{};
     try {

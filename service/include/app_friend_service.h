@@ -5,7 +5,6 @@
 #include "app_metrics.h"
 #include "app_database_service.h"
 #include "app_cache_service.h"
-#include "app_auth_service.h"
 
 class FriendService
 {
@@ -20,13 +19,11 @@ public:
     explicit FriendService(std::shared_ptr<Logging::Logger> logger,
                            std::shared_ptr<Metrics> metrics,
                            std::shared_ptr<DatabaseService> db,
-                           std::shared_ptr<CacheService> cache,
-                           std::shared_ptr<AuthService> auth)
+                           std::shared_ptr<CacheService> cache)
     :   logger_(std::move(logger)),
         metrics_(std::move(metrics)),
         db_(std::move(db)),
-        cache_(std::move(cache)),
-        auth_(std::move(auth)) {}
+        cache_(std::move(cache)) {}
 
     void register_endpoints(drogon::HttpAppFramework* server);
 
@@ -35,7 +32,6 @@ private:
     std::shared_ptr<Metrics>         metrics_{nullptr};
     std::shared_ptr<DatabaseService> db_{nullptr};
     std::shared_ptr<CacheService>    cache_{nullptr};
-    std::shared_ptr<AuthService>     auth_{nullptr};
 
     bool friend_set_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id);
     bool friend_delete_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id);

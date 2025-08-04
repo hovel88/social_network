@@ -11,6 +11,15 @@
 class InMemService
 {
 public:
+    struct Auth {
+        std::string id;
+        std::string pwd_hash;
+
+        static constexpr auto mpp = std::make_tuple(&Auth::id, &Auth::pwd_hash);
+        std::string to_string() const {
+            return std::string("id=") + id + std::string("  pwd_hash=") + pwd_hash;
+        }
+    };
     struct auth_rv {
         std::string error_str{};
         bool        authenticated{false};

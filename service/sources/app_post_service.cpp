@@ -2,6 +2,7 @@
 #include <ctime>
 #include <nlohmann/json.hpp>
 #include "app_post_service.h"
+#include "app_auth_service.h"
 
 static std::string time_point_to_format_str_(const std::chrono::system_clock::time_point& p)
 {
@@ -37,7 +38,7 @@ void PostService::register_endpoints(drogon::HttpAppFramework* server)
 
             callback(res);
         },
-        {drogon::HttpMethod::Get});
+        {drogon::HttpMethod::Get, "MiddlewareAuth"});
 
     server->registerHandlerViaRegex(R"(/post/delete/([0-9a-fA-F-]{36}))",
         [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback, const std::string& requested_id) {
@@ -53,7 +54,7 @@ void PostService::register_endpoints(drogon::HttpAppFramework* server)
 
             callback(res);
         },
-        {drogon::HttpMethod::Put});
+        {drogon::HttpMethod::Put, "MiddlewareAuth"});
 
     server->registerHandler("/post/create",
         [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
@@ -69,7 +70,7 @@ void PostService::register_endpoints(drogon::HttpAppFramework* server)
 
             callback(res);
         },
-        {drogon::HttpMethod::Post});
+        {drogon::HttpMethod::Post, "MiddlewareAuth"});
 
     server->registerHandler("/post/update",
         [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
@@ -85,7 +86,7 @@ void PostService::register_endpoints(drogon::HttpAppFramework* server)
 
             callback(res);
         },
-        {drogon::HttpMethod::Put});
+        {drogon::HttpMethod::Put, "MiddlewareAuth"});
 
     server->registerHandler("/post/feed",
         [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
@@ -101,30 +102,15 @@ void PostService::register_endpoints(drogon::HttpAppFramework* server)
 
             callback(res);
         },
-        {drogon::HttpMethod::Get});
+        {drogon::HttpMethod::Get, "MiddlewareAuth"});
 }
 
-bool PostService::post_get_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
+bool PostService::post_get_id_handler(const drogon::HttpRequestPtr& /*req*/, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
+    // const std::string user_id = req->attributes()->get<std::string>("user_id");
+
     if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("post_get_id_handler: request param 'id' is not an UUID format"));
-        return false;
-    }
-
-    if (!db_ || !auth_) {
-        auto err = std::format("post_get_id_handler: database service and/or authentication service are unavailable");
-        LOGGER_ERROR(err);
-        nlohmann::json j = {{"code", 503}, {"message", err}};
-        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
-        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
-        res->setBody(j.dump());
-        return false;
-    }
-
-    std::string id;
-    if (!auth_->authenticate(req, id)) {
-        LOGGER_ERROR(std::format("post_get_id_handler: request from unauthorized user"));
-        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
         return false;
     }
 
@@ -164,30 +150,14 @@ bool PostService::post_get_id_handler(const drogon::HttpRequestPtr& req, drogon:
 
 bool PostService::post_delete_id_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
 {
+    const std::string user_id = req->attributes()->get<std::string>("user_id");
+
     if (!AuthService::is_valid_uuid(requested_id)) {
         LOGGER_ERROR(std::format("post_delete_id_handler: request param 'id' is not an UUID format"));
         return false;
     }
 
-    if (!db_ || !auth_) {
-        auto err = std::format("post_delete_id_handler: database service and/or authentication service are unavailable");
-        LOGGER_ERROR(err);
-        nlohmann::json j = {{"code", 503}, {"message", err}};
-        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
-        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
-        res->setBody(j.dump());
-        return false;
-    }
-
-    std::string id;
-    if (!auth_->authenticate(req, id)) {
-        LOGGER_ERROR(std::format("post_delete_id_handler: request from unauthorized user"));
-        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
-        return false;
-    }
-
     const std::string post_id{requested_id};
-    const std::string user_id{id};
 
     std::string err{};
     try {
@@ -223,6 +193,7 @@ bool PostService::post_delete_id_handler(const drogon::HttpRequestPtr& req, drog
 
 bool PostService::post_create_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res)
 {
+    const std::string user_id = req->attributes()->get<std::string>("user_id");
     auto body = nlohmann::json::parse(req->getBody());
 
     if (!body.contains("text")) {
@@ -235,25 +206,7 @@ bool PostService::post_create_handler(const drogon::HttpRequestPtr& req, drogon:
         return false;
     }
 
-    if (!db_ || !auth_) {
-        auto err = std::format("post_create_handler: database service and/or authentication service are unavailable");
-        LOGGER_ERROR(err);
-        nlohmann::json j = {{"code", 503}, {"message", err}};
-        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
-        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
-        res->setBody(j.dump());
-        return false;
-    }
-
-    std::string id;
-    if (!auth_->authenticate(req, id)) {
-        LOGGER_ERROR(std::format("post_create_handler: request from unauthorized user"));
-        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
-        return false;
-    }
-
     const std::string content{body["text"].get<std::string>()};
-    const std::string user_id{id};
 
     std::string err{};
     try {
@@ -296,6 +249,7 @@ bool PostService::post_create_handler(const drogon::HttpRequestPtr& req, drogon:
 
 bool PostService::post_update_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res)
 {
+    const std::string user_id = req->attributes()->get<std::string>("user_id");
     auto body = nlohmann::json::parse(req->getBody());
 
     if (!body.contains("id")
@@ -315,26 +269,8 @@ bool PostService::post_update_handler(const drogon::HttpRequestPtr& req, drogon:
         return false;
     }
 
-    if (!db_ || !auth_) {
-        auto err = std::format("post_update_handler: database service and/or authentication service are unavailable");
-        LOGGER_ERROR(err);
-        nlohmann::json j = {{"code", 503}, {"message", err}};
-        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
-        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
-        res->setBody(j.dump());
-        return false;
-    }
-
-    std::string id;
-    if (!auth_->authenticate(req, id)) {
-        LOGGER_ERROR(std::format("post_update_handler: request from unauthorized user"));
-        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
-        return false;
-    }
-
     const std::string content{body["text"].get<std::string>()};
     const std::string post_id{body["id"].get<std::string>()};
-    const std::string user_id{id};
 
     std::string err{};
     try {
@@ -370,6 +306,7 @@ bool PostService::post_update_handler(const drogon::HttpRequestPtr& req, drogon:
 
 bool PostService::post_feed_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res)
 {
+    const std::string user_id = req->attributes()->get<std::string>("user_id");
     size_t offset = 0;
     size_t limit  = 10;
 
@@ -389,25 +326,6 @@ bool PostService::post_feed_handler(const drogon::HttpRequestPtr& req, drogon::H
     // добавляем в ответ несколько заголовков с информацией о параметрах "текущей страницы"
     res->addHeader("X-Pagination-Offset", std::to_string(offset));
     res->addHeader("X-Pagination-Limit", std::to_string(limit));
-
-    if (!db_ || !auth_) {
-        auto err = std::format("post_feed_handler: database service and/or authentication service are unavailable");
-        LOGGER_ERROR(err);
-        nlohmann::json j = {{"code", 503}, {"message", err}};
-        res->setStatusCode(drogon::HttpStatusCode::k503ServiceUnavailable);
-        res->setContentTypeCode(drogon::ContentType::CT_APPLICATION_JSON);
-        res->setBody(j.dump());
-        return false;
-    }
-
-    std::string id;
-    if (!auth_->authenticate(req, id)) {
-        LOGGER_ERROR(std::format("post_feed_handler: request from unauthorized user"));
-        res->setStatusCode(drogon::HttpStatusCode::k401Unauthorized);
-        return false;
-    }
-
-    const std::string user_id{id};
 
     std::string err{};
     try {

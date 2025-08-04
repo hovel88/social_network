@@ -45,7 +45,7 @@ InMemService::auth_rv InMemService::authenticate_user(const std::string& user_id
 {
     auth_rv rv{};
     if (client_ && connection_) {
-        std::vector<CheckUserRes> results{};
+        std::vector<Auth> results{};
 
         try {
             rid_t check_future = connection_->call("check_user", std::make_tuple(user_id));
@@ -73,8 +73,7 @@ InMemService::auth_rv InMemService::authenticate_user(const std::string& user_id
                         LOGGER_ERROR(std::format("Tarantool -- data.decode : empty"));
                     }
                     for (auto const& result : results) {
-                        LOGGER_DEBUG(std::format("Tarantool -- data.decode : result.id={} result.pwd_hash={}",
-                            result.id, result.pwd_hash));
+                        LOGGER_DEBUG(std::format("Tarantool -- data.decode : {}", result.to_string()));
                     }
                 }
             }

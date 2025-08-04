@@ -2,19 +2,8 @@
 #include "app_auth_service.h"
 #include "helpers/string.h"
 
-bool AuthService::authenticate(const drogon::HttpRequestPtr& req, std::string& user_id)
+bool AuthService::authenticate(std::string& user_id)
 {
-    auto auth_header = req->getHeader("Authorization");
-    if (auth_header.empty()
-    ||  auth_header.find("Bearer ") != 0) {
-        return false;
-    }
-
-    user_id = StringHelpers::to_lowercase(auth_header.substr(7));
-    if (!AuthService::is_valid_uuid(user_id)) {
-        return false;
-    }
-
     std::string err{};
     if (inmem_) {
         auto rv = inmem_->authenticate_user(user_id);

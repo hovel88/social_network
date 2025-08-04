@@ -3,8 +3,7 @@
 #include <drogon/drogon.h>
 #include "logger/logger.h"
 #include "app_metrics.h"
-#include "app_database_service.h"
-#include "app_auth_service.h"
+#include "app_inmem_service.h"
 
 class DialogService
 {
