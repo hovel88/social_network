@@ -2,6 +2,7 @@
 #include <ctime>
 #include <nlohmann/json.hpp>
 #include "app_dialog_service.h"
+#include "app_auth_service.h"
 
 void DialogService::register_endpoints(drogon::HttpAppFramework* server)
 {
@@ -71,7 +72,7 @@ bool DialogService::dialog_send_handler(const drogon::HttpRequestPtr& req, drogo
 
     std::string err{};
     try {
-        auto rv = db_->send_dialog_message(from_user_id, to_user_id, message);
+        auto rv = inmem_->send_dialog_message(from_user_id, to_user_id, message);
         if (!rv.error_str.empty()) {
             err = rv.error_str;
         } else {
@@ -112,7 +113,7 @@ bool DialogService::dialog_list_handler(const drogon::HttpRequestPtr& req, drogo
 
     std::string err{};
     try {
-        auto rv = db_->list_dialog_messages(from_user_id, to_user_id, 100);
+        auto rv = inmem_->list_dialog_messages(from_user_id, to_user_id, 100);
         if (!rv.error_str.empty()) {
             err = rv.error_str;
         } else {
@@ -135,7 +136,7 @@ bool DialogService::dialog_list_handler(const drogon::HttpRequestPtr& req, drogo
     return false;
 }
 
-std::vector<DatabaseService::Message> DialogService::get_page(const std::vector<DatabaseService::Message>& dialog, size_t offset, size_t limit)
+std::vector<InMemService::Message> DialogService::get_page(const std::vector<InMemService::Message>& dialog, size_t offset, size_t limit)
 {
     if (offset >= dialog.size()) return {};
 
@@ -144,10 +145,10 @@ std::vector<DatabaseService::Message> DialogService::get_page(const std::vector<
                ? (dialog.begin() + offset + limit)
                : (dialog.end());
 
-    return std::vector<DatabaseService::Message>(start, end);
+    return std::vector<InMemService::Message>(start, end);
 }
 
-std::string DialogService::serialize_messages(const std::vector<DatabaseService::Message>& dialog)
+std::string DialogService::serialize_messages(const std::vector<InMemService::Message>& dialog)
 {
     nlohmann::json j{};
     if (dialog.empty()) {
