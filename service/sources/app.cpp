@@ -246,12 +246,40 @@ void App::http_start()
                    http_server_thread_name, listener.toIpPort()));
             }
         })
+        // .registerSyncAdvice([this](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+        //     std::cout << ">>> SyncAdvice: Path=" << req->path() << std::endl;
+        //     return nullptr;
+        // })
+        .registerPreSendingAdvice([this](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& res) -> void {
+            std::stringstream ss;
+            auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            //                                       08/Apr/2025:12:06:54 +0000
+            ss << std::put_time(std::localtime(&t), "%d/%b/%Y:%H:%M:%S %z");
+            auto time_local_str  = ss.str();
+            auto request         = std::format("{} {} {}", req->methodString(), req->path(), req->versionString());
+            auto body_bytes_sent = res->getHeader("Content-Length");
+            auto http_user_agent = req->getHeader("User-Agent");
+            if (body_bytes_sent.empty()) body_bytes_sent = std::to_string(res->getBody().size());
+            if (http_user_agent.empty()) http_user_agent = "unknown";
+
+            // NOTE: From NGINX default access log format
+            // log_format combined '$remote_addr - $remote_user [$time_local] '
+            //                     '"$request" $status $body_bytes_sent '
+            //                     '"$http_referer" "$http_user_agent"';
+
+            constexpr auto log_html = R"({} - {} [{}] "{}" {} {} "{}" "{}")";
+            // 127.0.0.1 - - [08/Apr/2025:12:07:01 +0000] "GET /livez HTTP/1.1" 200 3 "-" "curl/8.12.1"
+            LOGGER_TRACE(std::format(log_html,
+                req->peerAddr().toIp(), /*remote_user=*/"-", time_local_str,
+                request, status_message(res->statusCode()),
+                body_bytes_sent, /*http_referer=*/"-", http_user_agent));
+        })
         // лимит размера тела запроса, защита от DDoS: 1 MB
         .setClientMaxBodySize(1 * 1024 * 1024)
         // таймаут на поддерживание соединение без операций чтения/записи (секунд)
-        .setIdleConnectionTimeout(5)
+        // .setIdleConnectionTimeout(5)
         // Keep-Alive connection
-        .setKeepaliveRequestsNumber(2)
+        // .setKeepaliveRequestsNumber(2)
         // добавлять в каждый ответ заголовок "Data: Sat, 01 Jan 2005 11:00:00 GMT"
         .enableDateHeader(true)
         // добавлять в каждый ответ заголовок "Server: drogon/1.9.11"
@@ -351,27 +379,3 @@ void App::http_start()
         LOGGER_ERROR(std::format("{} exception: {}", http_server_thread_name, ex.what()));
     }
 }
-#if 0
-void App::log_handler(const httplib::Request& req, const httplib::Response& res)
-{
-    auto request         = std::format("{} {} {}", req.method, req.path, req.version);
-    auto body_bytes_sent = res.get_header_value("Content-Length");
-    auto http_user_agent = req.get_header_value("User-Agent", "-");
-
-    // NOTE: From NGINX default access log format
-    // log_format combined '$remote_addr - $remote_user [$time_local] '
-    //                     '"$request" $status $body_bytes_sent '
-    //                     '"$http_referer" "$http_user_agent"';
-
-    constexpr auto log_html = R"({} - {} [{}] "{}" {} {} "{}" "{}")";
-    // 127.0.0.1 - - [08/Apr/2025:12:07:01 +0000] "GET /livez HTTP/1.1" 200 3 "-" "curl/8.12.1"
-    LOGGER_TRACE(std::format(log_html, req.remote_addr,
-                                    /*remote_user=*/"-",
-                                    time_local_str_(),
-                                    request,
-                                    res.status,
-                                    body_bytes_sent,
-                                    /*http_referer=*/"-",
-                                    http_user_agent));
-}
-#endif

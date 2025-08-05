@@ -65,9 +65,9 @@ InMemService::auth_rv InMemService::authenticate_user(const std::string& user_id
                     if (results.empty()) {
                         LOGGER_ERROR(std::format("Tarantool -- data.decode : empty"));
                     }
-                    for (auto const& result : results) {
-                        LOGGER_DEBUG(std::format("Tarantool -- data.decode : {}", result.to_string()));
-                    }
+                    // for (auto const& result : results) {
+                    //     LOGGER_DEBUG(std::format("Tarantool -- data.decode : {}", result.to_string()));
+                    // }
                 }
             }
 
@@ -115,9 +115,9 @@ InMemService::common_rv InMemService::send_dialog_message(const std::string& fro
                     if (results.empty()) {
                         LOGGER_ERROR(std::format("Tarantool -- data.decode : empty"));
                     }
-                    for (auto const& result : results) {
-                        LOGGER_DEBUG(std::format("Tarantool -- data.decode : {}", result.to_string()));
-                    }
+                    // for (auto const& result : results) {
+                    //     LOGGER_DEBUG(std::format("Tarantool -- data.decode : {}", result.to_string()));
+                    // }
                 }
             }
 
@@ -162,9 +162,9 @@ InMemService::dialog_rv InMemService::list_dialog_messages(const std::string& fr
                     if (results.empty()) {
                         LOGGER_ERROR(std::format("Tarantool -- data.decode : empty"));
                     }
-                    for (auto const& result : results) {
-                        LOGGER_DEBUG(std::format("Tarantool -- data.decode : {}", result.to_string()));
-                    }
+                    // for (auto const& result : results) {
+                    //     LOGGER_DEBUG(std::format("Tarantool -- data.decode : {}", result.to_string()));
+                    // }
                 }
             }
 

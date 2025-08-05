@@ -68,7 +68,7 @@ public:
     dialog_rv list_dialog_messages(const std::string& from_id, const std::string& to_id, uint32_t limit);
 
 private:
-    using Buf_t = tnt::Buffer<16 * 1024>;
+    using Buf_t = tnt::Buffer<16 * 1024 * 1024>;
     using Net_t = LibevNetProvider<Buf_t, DefaultStream>;
 
     std::shared_ptr<Logging::Logger>          logger_{nullptr};

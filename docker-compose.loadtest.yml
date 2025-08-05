@@ -15,4 +15,4 @@ services:
       - net
     volumes:
       - ./k6_tests:/tests
-    # command: run --verbose --out experimental-prometheus-rw /tests/user_search.js
+    # command: run --verbose --out experimental-prometheus-rw --http-debug="full" /tests/user_search.js
