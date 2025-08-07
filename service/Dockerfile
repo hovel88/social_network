@@ -5,7 +5,7 @@ RUN apk update \
         openssl openssl-dev openssl-libs-static \
         curl curl-dev \
         spdlog spdlog-dev \
-        libuv libuv-dev c-ares c-ares-dev c-ares-static \
+        libev libev-dev libuv libuv-dev c-ares c-ares-dev c-ares-static \
         libpq libpq-dev \
         nlohmann-json \
         jsoncpp-dev jsoncpp-static \
@@ -49,24 +49,6 @@ cd ../..
 rm -rf ./libpqxx/
 EOF
 RUN chmod u+x /install_libpqxx.sh && ./install_libpqxx.sh
-
-# LIB: cpp-httplib v0.20.0
-COPY <<EOF /install_cpp-httplib.sh
-#!/bin/sh
-# set -eux
-
-git clone https://github.com/yhirose/cpp-httplib.git
-cd cpp-httplib
-git checkout v0.20.0
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DHTTPLIB_TEST=OFF -DHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN=OFF -DOPENSSL_USE_STATIC_LIBS=ON ..
-cmake --build . --parallel 4
-cmake --install .
-cd ../..
-rm -rf ./cpp-httplib/
-EOF
-RUN chmod u+x /install_cpp-httplib.sh && ./install_cpp-httplib.sh
 
 # LIB: cxxopts v3.2.0
 COPY <<EOF /install_cxxopts.sh
@@ -178,6 +160,53 @@ cd ..
 rm -rf ./uWebSockets/
 EOF
 RUN chmod u+x /install_uWebSockets.sh && ./install_uWebSockets.sh
+
+# LIB: ampq-cpp v4.3.27
+COPY <<EOF /install_ampq-cpp.sh
+#!/bin/sh
+# set -eux
+
+git clone https://github.com/CopernicaMarketingSoftware/AMQP-CPP.git
+cd AMQP-CPP
+git checkout v4.3.27
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DAMQP-CPP_BUILD_SHARED=OFF -DAMQP-CPP_LINUX_TCP=ON ..
+cmake --build . --parallel 4
+cmake --install .
+cd ../..
+rm -rf ./AMQP-CPP/
+EOF
+RUN chmod u+x /install_ampq-cpp.sh && ./install_ampq-cpp.sh
+
+# LIB: react-cpp v1.0.3
+COPY <<EOF /install_react-cpp.sh
+#!/bin/sh
+# set -eux
+
+git clone https://github.com/CopernicaMarketingSoftware/REACT-CPP.git
+cd REACT-CPP
+git checkout v1.0.3
+sed -i '1i #include <functional>' include/types.h
+sed -i '1i #include <array>' include/pipe.h
+sed -i 's|*.obj|*.obj *.d|' src/Makefile
+sed -i '/include <iostream>/a #ifdef stdin\\
+  #undef stdin\\
+#endif\\
+#ifdef stdout\\
+  #undef stdout\\
+#endif\\
+#ifdef stderr\\
+  #undef stderr\\
+#endif' src/includes.h
+make static
+make static_fpic
+make shared
+make install
+cd ..
+rm -rf ./REACT-CPP/
+EOF
+RUN chmod u+x /install_react-cpp.sh && ./install_react-cpp.sh
 
 WORKDIR /app-src
 COPY . /app-src

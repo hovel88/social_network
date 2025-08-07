@@ -64,6 +64,9 @@ find_static_library(LIB_BROTLIENC_STATIC brotlienc)
 find_static_library(LIB_BROTLICOM_STATIC brotlicommon)
 find_static_library(LIB_JSONCPP_STATIC jsoncpp)
 find_static_library(LIB_CARES_STATIC cares)
+find_static_library(LIB_EV_STATIC ev)
+find_static_library(LIB_AMQPCPP_STATIC amqpcpp)
+find_static_library(LIB_REACTCPP_STATIC reactcpp)
 
 target_link_libraries(${SERVICE_SRC_LIB}
     PUBLIC      pthread
@@ -76,6 +79,10 @@ target_link_libraries(${SERVICE_SRC_LIB}
                 ${LIB_BROTLICOM_STATIC}
                 ${LIB_JSONCPP_STATIC}
                 ${LIB_CARES_STATIC}
+                ${LIB_AMQPCPP_STATIC}
+                ${LIB_REACTCPP_STATIC}
+                ${LIB_EV_STATIC}
+                uuid
                 ossp-uuid
                 ssl
                 crypto
