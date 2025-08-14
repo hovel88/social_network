@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package social_network.chats;
+
+import "google/protobuf/timestamp.proto";
+
+service DialogService {
+  rpc SendDialogMessage(SendDialogMessageRequest) returns (SendDialogMessageResponse);
+  rpc ListDialogMessages(ListDialogMessagesRequest) returns (ListDialogMessagesResponse);
+}
+
+message Message {
+  string from_user_id = 1;
+  string to_user_id = 2;
+  string text = 3;
+}
+
+
+message SendDialogMessageRequest {
+  string x_request_id = 1;
+  Message message = 2;
+}
+
+message SendDialogMessageResponse {
+  bool success = 1;
+}
+
+
+message ListDialogMessagesRequest {
+  string x_request_id = 1;
+  string from_user_id = 2;
+  string to_user_id = 3;
+  uint32 limit = 4;
+}
+
+message ListDialogMessagesResponse {
+  repeated Message messages = 1;
+}

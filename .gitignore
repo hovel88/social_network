@@ -3,6 +3,8 @@
 _extern/*
 !_extern/.gitkeep
 
+**/*.pb.*
+
 postgres_db
 replication/postgres_m0_data
 replication/postgres_r1_data
