@@ -11,6 +11,7 @@
 #include "helpers/thread.h"
 #include "app.h"
 #include "http_middleware_auth.h"
+#include "configuration.h"
 
 static inline const char* status_message(drogon::HttpStatusCode status) {
     switch (status) {

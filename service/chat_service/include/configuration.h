@@ -9,6 +9,7 @@
 #include "logger/logger.h"
 
 namespace config_data {
+
     namespace config_max {
 
         extern const int http_threads_count;

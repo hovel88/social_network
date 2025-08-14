@@ -6,7 +6,6 @@
 #include "app_auth_service.h"
 #include "http_dialog_service.h"
 #include "grpc_dialog_service.h"
-#include "configuration.h"
 
 using OnLivenessCheckFunc  = std::function<bool(void)>;
 using OnReadinessCheckFunc = std::function<bool(void)>;

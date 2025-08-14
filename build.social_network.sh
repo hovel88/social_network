@@ -19,11 +19,11 @@ docker run \
     --mount type=bind,src=${BIND_SERVICE_SRC_DIR},dst=/app-src \
     --mount type=bind,src=${BIND_SERVICE_BUILD_DIR},dst=/install_dir \
     ${BUILDER_IMAGE_NAME}:${BUILDER_IMAGE_VERSION} \
-    ${BUILDER_SHELL} make.chat_service.sh
+    ${BUILDER_SHELL} make.social_network.sh
 
-if [ -f ${BIND_SERVICE_BUILD_DIR}/make_image.chat_service.sh ]; then
+if [ -f ${BIND_SERVICE_BUILD_DIR}/make_image.social_network.sh ]; then
     cd ${BIND_SERVICE_BUILD_DIR}
-    ./make_image.chat_service.sh
+    ./make_image.social_network.sh
 fi
 
 # docker run \

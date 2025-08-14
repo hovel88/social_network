@@ -15,15 +15,6 @@ endif()
 string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE)
 
 
-# Устанавливаем версию итогового бинарника в зависимости от ветки в Git
-if (NOT GIT_WORKDIR_EMPTY)
-    set(GIT_WORKDIR_EMPTY 0 CACHE STRING "Is Git workdir empty" FORCE)
-endif()
-if (NOT GIT_BRANCH_NAME)
-    set(GIT_BRANCH_NAME main CACHE STRING "Git branch name" FORCE)
-endif()
-string(TOLOWER "${GIT_BRANCH}" GIT_BRANCH_NAME)
-
 # Функция для извлечения абсолютного пути (FOUND_LIB_PATH) для указанной библиотеки (LIB_NAME).
 # Применяется, если нужно слинковать статическую библиотеку в обход динамической.
 # Используется вот так:
@@ -196,13 +187,13 @@ if (BUILD_TYPE STREQUAL RELEASE)
 endif()
 
 #
-# установка сиервиса и генерация файлов
+# установка сервиса и генерация файлов
 #
 
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Dockerfile.${SERVICE_TARGET}.in"
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Dockerfile.in"
                "${CMAKE_CURRENT_BINARY_DIR}/Dockerfile.${SERVICE_TARGET}" @ONLY)
 
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/make_image.${SERVICE_TARGET}.sh.in"
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/make_image.sh.in"
                "${CMAKE_CURRENT_BINARY_DIR}/make_image.${SERVICE_TARGET}.sh" @ONLY)
 
 include(GNUInstallDirs)

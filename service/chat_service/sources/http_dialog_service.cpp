@@ -22,7 +22,7 @@ void HttpDialogService::register_endpoints(drogon::HttpAppFramework* server)
 
             callback(res);
         },
-        {drogon::HttpMethod::Post, "MiddlewareAuth"});
+        {drogon::HttpMethod::Post, "HttpMiddlewareAuth"});
 
     server->registerHandlerViaRegex(R"(/dialog/([0-9a-fA-F-]{36})/list)",
         [this](const drogon::HttpRequestPtr& req, std::function<void (const drogon::HttpResponsePtr&)>&& callback, const std::string& requested_id) {
@@ -38,7 +38,7 @@ void HttpDialogService::register_endpoints(drogon::HttpAppFramework* server)
 
             callback(res);
         },
-        {drogon::HttpMethod::Get, "MiddlewareAuth"});
+        {drogon::HttpMethod::Get, "HttpMiddlewareAuth"});
 }
 
 bool HttpDialogService::dialog_send_handler(const drogon::HttpRequestPtr& req, drogon::HttpResponsePtr& res, const std::string& requested_id)
