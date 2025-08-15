@@ -1,9 +1,23 @@
 #include <format>
 #include <ctime>
 #include <nlohmann/json.hpp>
+#include <google/protobuf/util/json_util.h>
 #include "helpers/uuid.h"
 #include "http_dialog_service.h"
 #include "app_auth_service.h"
+
+static std::string proto_message_to_str_(const google::protobuf::Message& obj)
+{
+    std::string str;
+    google::protobuf::util::JsonPrintOptions opt;
+    opt.always_print_primitive_fields = true;
+    if (!google::protobuf::util::MessageToJsonString(obj, &str, opt).ok()) {
+        str.assign("can't convert proto");
+    }
+    return str;
+}
+
+// --------------------------------------------------------
 
 void HttpDialogService::register_endpoints(drogon::HttpAppFramework* server)
 {
@@ -80,16 +94,15 @@ bool HttpDialogService::dialog_send_handler(const drogon::HttpRequestPtr& req, d
         msg->set_from_user_id(from_user_id);
         msg->set_to_user_id(to_user_id);
         msg->set_text(message);
-
-        std::string pb_as_string;
-        request.SerializeToString(&pb_as_string);
-        LOGGER_DEBUG(std::format("dialog_send_handler: send Protobuf: {}", pb_as_string));
+        LOGGER_TRACE(std::format("dialog_send_handler: send Protobuf: {}", proto_message_to_str_(request)));
 
         grpc::ClientContext context;
         grpc::Status status = stub_->SendDialogMessage(&context, request, &response);
         if (!status.ok()) {
             err = status.error_message();
         } else {
+            LOGGER_TRACE(std::format("dialog_send_handler: recv Protobuf: {}", proto_message_to_str_(response)));
+
             // возвращаем просто 200 OK
             res->setStatusCode(drogon::HttpStatusCode::k200OK);
             return true;
@@ -133,16 +146,15 @@ bool HttpDialogService::dialog_list_handler(const drogon::HttpRequestPtr& req, d
         request.set_from_user_id(from_user_id);
         request.set_to_user_id(to_user_id);
         request.set_limit(100);
-
-        std::string pb_as_string;
-        request.SerializeToString(&pb_as_string);
-        LOGGER_DEBUG(std::format("dialog_list_handler: send Protobuf: {}", pb_as_string));
+        LOGGER_TRACE(std::format("dialog_list_handler: send Protobuf: {}", proto_message_to_str_(request)));
 
         grpc::ClientContext context;
         grpc::Status status = stub_->ListDialogMessages(&context, request, &response);
         if (!status.ok()) {
             err = status.error_message();
         } else {
+            LOGGER_TRACE(std::format("dialog_list_handler: recv Protobuf: {}", proto_message_to_str_(response)));
+
             std::vector<Message> messages{};
             for (int i = 0; i < response.messages_size(); ++i) {
                 auto& m = messages.emplace_back(Message());

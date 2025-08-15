@@ -22,6 +22,11 @@ scrape_configs:
       - targets: ['social_srv:6001']
     metrics_path: /metrics
 
+  - job_name: 'chat'
+    static_configs:
+      - targets: ['chat_srv:6001']
+    metrics_path: /metrics
+
   - job_name: 'tarantool'
     static_configs:
       - targets: ['tarantool_db:8081']

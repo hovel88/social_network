@@ -114,8 +114,8 @@ void App::run()
             metrics_ = std::make_shared<Metrics>(db_host_tags);
             exposer_->RegisterCollectable(metrics_->registry());
 
-            NetHelpers::SocketAddress sock_addr(configuration.grpc_url);
-            grpc_channel_ = grpc::CreateChannel(sock_addr.to_string(), grpc::InsecureChannelCredentials()); // без SSL/TLS
+            UrlHelpers::Url url(configuration.grpc_url);
+            grpc_channel_ = grpc::CreateChannel(std::format("{}:{}", url.get_host(), url.get_port()), grpc::InsecureChannelCredentials()); // без SSL/TLS
         }
 
         db_start();

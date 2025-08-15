@@ -23,18 +23,18 @@ services:
       - PGSQL_MASTER_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_db:5432/postgres
       - TARANTOOL_URL=tcp://tntuser:tntpass@tarantool_db:3301
       - HTTP_LISTENING=0.0.0.0:6000
-      - HTTP_QUEUE_CAPACITY=${ENV_HTTP_QUEUE_CAPACITY}
-      - HTTP_THREADS_COUNT=${ENV_HTTP_THREADS_COUNT}
+      - HTTP_QUEUE_CAPACITY=4096
+      - HTTP_THREADS_COUNT=1
       - PROMETHEUS_PORT=6001
     networks:
       - net
     ports:
-      - ${ENV_HTTP_EXTERNAL_PORT}:6000
-      - ${ENV_PROMETHEUS_EXTERNAL_PORT}:6001   # для метрик Prometheus
+      - ${ENV_SOCIAL_HTTP_EXTERNAL_PORT}:6000
+      - ${ENV_SOCIAL_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
 
 
   postgres_db:
-    image: ${ENV_POSTGRES_DB_IMAGE}
+    image: postgres:16-alpine
     container_name: "postgres_db"
     hostname: "postgres_db"
     # restart: on-failure

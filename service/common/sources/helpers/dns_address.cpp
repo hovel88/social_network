@@ -222,7 +222,7 @@ uint16_t Dns::resolve_service_to_port(const std::string& service)
     if (se) {
         return ntohs(static_cast<uint16_t>(se->s_port));
     } else {
-        throw DnsException(std::string("service porn not found by service name = '") + service + std::string("'"));
+        throw DnsException(std::string("service port not found by service name = '") + service + std::string("'"));
     }
 }
 

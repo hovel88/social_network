@@ -19,18 +19,18 @@ services:
       # - PGSQL_REPLICA_1_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_r1:5432/postgres
       # - PGSQL_REPLICA_2_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_r2:5432/postgres
       - HTTP_LISTENING=0.0.0.0:6000
-      - HTTP_QUEUE_CAPACITY=${ENV_HTTP_QUEUE_CAPACITY}
-      - HTTP_THREADS_COUNT=${ENV_HTTP_THREADS_COUNT}
+      - HTTP_QUEUE_CAPACITY=4096
+      - HTTP_THREADS_COUNT=1
       - PROMETHEUS_PORT=6001
     networks:
       - net
     ports:
-      - ${ENV_HTTP_EXTERNAL_PORT}:6000
-      - ${ENV_PROMETHEUS_EXTERNAL_PORT}:6001   # для метрик Prometheus
+      - ${ENV_SOCIAL_HTTP_EXTERNAL_PORT}:6000
+      - ${ENV_SOCIAL_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
 
 
   postgres_m0:
-    image: ${ENV_POSTGRES_DB_IMAGE}
+    image: postgres:16-alpine
     container_name: "postgres_m0"
     hostname: "postgres_m0"
     environment:
@@ -50,7 +50,7 @@ services:
 
 
   postgres_r1:
-    image: ${ENV_POSTGRES_DB_IMAGE}
+    image: postgres:16-alpine
     container_name: "postgres_r1"
     hostname: "postgres_r1"
     environment:
@@ -65,7 +65,7 @@ services:
 
 
   postgres_r2:
-    image: ${ENV_POSTGRES_DB_IMAGE}
+    image: postgres:16-alpine
     container_name: "postgres_r2"
     hostname: "postgres_r2"
     environment:
