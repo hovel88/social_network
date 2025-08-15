@@ -1,0 +1,198 @@
+networks:
+  net:
+    driver: bridge
+
+volumes:
+  prometheus-storage:
+  grafana-storage:
+
+services:
+  social_srv:
+    image: ${ENV_SOCIAL_SERVICE_IMAGE}
+    container_name: "social_srv"
+    hostname: "social_srv"
+    # restart: on-failure
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      tarantool_db:
+        condition: service_started
+      chat_srv:
+        condition: service_started
+    environment:
+      - PGSQL_MASTER_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_db:5432/postgres
+      - GRPC_URL=grpc://chat_srv:50051
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=4096
+      - HTTP_THREADS_COUNT=1
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
+    ports:
+      - ${ENV_SOCIAL_HTTP_EXTERNAL_PORT}:6000
+      - ${ENV_SOCIAL_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
+
+
+  chat_srv:
+    image: ${ENV_CHAT_SERVICE_IMAGE}
+    container_name: "chat_srv"
+    hostname: "chat_srv"
+    # restart: on-failure
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      tarantool_db:
+        condition: service_started
+    environment:
+      - TARANTOOL_URL=tcp://tntuser:tntpass@tarantool_db:3301
+      - GRPC_LISTENING=0.0.0.0:50051
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=4096
+      - HTTP_THREADS_COUNT=1
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
+    ports:
+      - ${ENV_CHAT_HTTP_EXTERNAL_PORT}:6000
+      - ${ENV_CHAT_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
+
+
+  postgres_db:
+    image: postgres:16-alpine
+    container_name: "postgres_db"
+    hostname: "postgres_db"
+    # restart: on-failure
+    environment:
+      - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
+    volumes:
+      - ./postgres_db:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - net
+    ports:
+      - 15432:5432
+
+
+  tarantool_db:
+    # image: tarantool/tarantool:2.11
+    # image: tarantool/tarantool:3.3.2
+    build:
+      context: ./tarantool/
+      dockerfile: Dockerfile
+    container_name: "tarantool_db"
+    hostname: "tarantool_db"
+    # restart: on-failure
+    # depends_on:
+    #   postgres_db:
+    #     condition: service_healthy
+    volumes:
+      - ./tarantool/scripts:/opt/tarantool
+      # - ./tarantool/tarantool_volume:/var/lib/tarantool
+      # - tarantool_storage:/var/lib/tarantool
+    networks:
+      - net
+    ports:
+      - "3301:3301"
+      - "8081:8081" # админка
+    command: tarantool /opt/tarantool/udf.lua
+
+
+  prometheus:
+    image: prom/prometheus:v2.37.9
+    container_name: "prometheus"
+    hostname: "prometheus"
+    restart: unless-stopped
+    networks:
+      - net
+    ports:
+      - 9090:9090
+      # - 9091:9091 # Pushgateway
+      # - 9093:9093 # Alertmanager
+      # - 9094:9094 # Alertmanager clustering
+      # - 9100:9100 # Prometheus Exporters (9100-9563)
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus
+      - prometheus-storage:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--enable-feature=promql-experimental-functions'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-remote-write-receiver' # Enables remote write endpoint for k6
+
+
+  grafana:
+    image: grafana/grafana
+    container_name: "grafana"
+    hostname: "grafana"
+    restart: unless-stopped
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor metricsSummary
+    depends_on:
+      - prometheus
+    networks:
+      - net
+    ports:
+      - 3000:3000
+    volumes:
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana-storage:/var/lib/grafana
+
+
+  node_exporter:
+    image: prom/node-exporter
+    container_name: "node_exporter"
+    hostname: "node_exporter"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - net
+    expose:
+      - 9100
+
+
+  cadvisor:
+    image: google/cadvisor
+    container_name: "cadvisor"
+    hostname: "cadvisor"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - net
+    expose:
+      - 8080
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+
+  k6:
+    image: grafana/k6
+    container_name: "k6"
+    hostname: "k6"
+    # restart: always
+    environment:
+      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write
+      - K6_PROMETHEUS_RW_TREND_STATS=p(95),p(99),min,max,count,sum
+      - TEST_HOST=http://social_srv:6000
+    depends_on:
+      - prometheus
+      - social_srv
+    networks:
+      - net
+    volumes:
+      - ./k6_tests:/tests
+    # command: run --verbose --out experimental-prometheus-rw --http-debug="full" /tests/user_search.js
