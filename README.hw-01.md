@@ -5,10 +5,10 @@
 * развернуть сервис и БД
 
 ```bash
-docker compose -f docker-compose.service-single.yml up -d
+docker compose -f docker-compose.hw-01.yml up -d
 
 # по окончании работы остановить систему командой
-docker compose -f docker-compose.service-single.yml down --remove-orphans
+docker compose -f docker-compose.hw-01.yml down --remove-orphans
 ```
 
 * зарегистрировать пользователя REST-запросом

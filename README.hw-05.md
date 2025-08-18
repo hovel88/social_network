@@ -20,10 +20,10 @@
 * развернуть систему
 
 ```bash
-docker compose -f docker-compose.service-sharding.yml up -d
+docker compose -f docker-compose.hw-05.yml up -d
 
 # по окончании работы остановить систему командой
-docker compose -f docker-compose.service-sharding.yml down --remove-orphans
+docker compose -f docker-compose.hw-05.yml down --remove-orphans
 ```
 
 * скопировать в контейнер БД файл `misc/db_users.sql`
@@ -184,7 +184,7 @@ SELECT nodename, count(*) FROM citus_shards GROUP BY nodename;
 * добавим еще несколько шардов:
 
 ```bash
-docker compose -f docker-compose.service-sharding.yml up --scale postgres_worker=5 -d
+docker compose -f docker-compose.hw-05.yml up --scale postgres_worker=5 -d
 
 [+] Running 8/8
  ✔ Container postgres_master                   Healthy                                      3.3s 

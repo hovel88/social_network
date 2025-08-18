@@ -13,15 +13,12 @@ services:
     hostname: "social_srv"
     # restart: on-failure
     depends_on:
-      postgres_db:
+      postgres_m0:
         condition: service_healthy
-      tarantool_db:
-        condition: service_started
-      chat_srv:
-        condition: service_started
     environment:
-      - PGSQL_MASTER_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_db:5432/postgres
-      - GRPC_URL=grpc://chat_srv:50051
+      - PGSQL_MASTER_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_m0:5432/postgres
+      # - PGSQL_REPLICA_1_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_r1:5432/postgres
+      # - PGSQL_REPLICA_2_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_r2:5432/postgres
       - HTTP_LISTENING=0.0.0.0:6000
       - HTTP_QUEUE_CAPACITY=4096
       - HTTP_THREADS_COUNT=1
@@ -33,39 +30,15 @@ services:
       - ${ENV_SOCIAL_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
 
 
-  chat_srv:
-    image: ${ENV_CHAT_SERVICE_IMAGE}
-    container_name: "chat_srv"
-    hostname: "chat_srv"
-    # restart: on-failure
-    depends_on:
-      postgres_db:
-        condition: service_healthy
-      tarantool_db:
-        condition: service_started
-    environment:
-      - TARANTOOL_URL=tcp://tntuser:tntpass@tarantool_db:3301
-      - GRPC_LISTENING=0.0.0.0:50051
-      - HTTP_LISTENING=0.0.0.0:6000
-      - HTTP_QUEUE_CAPACITY=4096
-      - HTTP_THREADS_COUNT=1
-      - PROMETHEUS_PORT=6001
-    networks:
-      - net
-    ports:
-      - ${ENV_CHAT_HTTP_EXTERNAL_PORT}:6000
-      - ${ENV_CHAT_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
-
-
-  postgres_db:
+  postgres_m0:
     image: postgres:16-alpine
-    container_name: "postgres_db"
-    hostname: "postgres_db"
-    # restart: on-failure
+    container_name: "postgres_m0"
+    hostname: "postgres_m0"
     environment:
+      - POSTGRES_USER=${ENV_POSTGRES_USER}
       - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
     volumes:
-      - ./postgresql/single:/var/lib/postgresql/data
+      - ./postgresql/replication/postgres_m0_data:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD", "pg_isready" ]
       interval: 10s
@@ -74,31 +47,37 @@ services:
     networks:
       - net
     ports:
-      - 15432:5432
+      - "15432:5432"
 
 
-  tarantool_db:
-    # image: tarantool/tarantool:2.11
-    # image: tarantool/tarantool:3.3.2
-    build:
-      context: ./tarantool/
-      dockerfile: Dockerfile
-    container_name: "tarantool_db"
-    hostname: "tarantool_db"
-    # restart: on-failure
-    # depends_on:
-    #   postgres_db:
-    #     condition: service_healthy
+  postgres_r1:
+    image: postgres:16-alpine
+    container_name: "postgres_r1"
+    hostname: "postgres_r1"
+    environment:
+      - POSTGRES_USER=${ENV_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
     volumes:
-      - ./tarantool/scripts:/opt/tarantool
-      # - ./tarantool/tarantool_volume:/var/lib/tarantool
-      # - tarantool_storage:/var/lib/tarantool
+      - ./postgresql/replication/postgres_r1_data:/var/lib/postgresql/data
     networks:
       - net
     ports:
-      - "3301:3301"
-      - "8081:8081" # админка
-    command: tarantool /opt/tarantool/udf.lua
+      - "25432:5432"
+
+
+  postgres_r2:
+    image: postgres:16-alpine
+    container_name: "postgres_r2"
+    hostname: "postgres_r2"
+    environment:
+      - POSTGRES_USER=${ENV_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
+    volumes:
+      - ./postgresql/replication/postgres_r2_data:/var/lib/postgresql/data
+    networks:
+      - net
+    ports:
+      - "35432:5432"
 
 
   prometheus:

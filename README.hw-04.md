@@ -42,10 +42,10 @@
 * развернуть систему
 
 ```bash
-docker compose -f docker-compose.service-single.yml -f docker-compose.monitoring.yml up -d
+docker compose -f docker-compose.hw-04.yml up -d
 
 # по окончании работы остановить систему командой
-docker compose -f docker-compose.service-single.yml -f docker-compose.monitoring.yml down --remove-orphans
+docker compose -f docker-compose.hw-04.yml down --remove-orphans
 ```
 
 * скопировать в контейнер БД файл `misc/db_friends.sql`

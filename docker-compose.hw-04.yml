@@ -15,13 +15,8 @@ services:
     depends_on:
       postgres_db:
         condition: service_healthy
-      tarantool_db:
-        condition: service_started
-      chat_srv:
-        condition: service_started
     environment:
       - PGSQL_MASTER_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_db:5432/postgres
-      - GRPC_URL=grpc://chat_srv:50051
       - HTTP_LISTENING=0.0.0.0:6000
       - HTTP_QUEUE_CAPACITY=4096
       - HTTP_THREADS_COUNT=1
@@ -31,30 +26,6 @@ services:
     ports:
       - ${ENV_SOCIAL_HTTP_EXTERNAL_PORT}:6000
       - ${ENV_SOCIAL_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
-
-
-  chat_srv:
-    image: ${ENV_CHAT_SERVICE_IMAGE}
-    container_name: "chat_srv"
-    hostname: "chat_srv"
-    # restart: on-failure
-    depends_on:
-      postgres_db:
-        condition: service_healthy
-      tarantool_db:
-        condition: service_started
-    environment:
-      - TARANTOOL_URL=tcp://tntuser:tntpass@tarantool_db:3301
-      - GRPC_LISTENING=0.0.0.0:50051
-      - HTTP_LISTENING=0.0.0.0:6000
-      - HTTP_QUEUE_CAPACITY=4096
-      - HTTP_THREADS_COUNT=1
-      - PROMETHEUS_PORT=6001
-    networks:
-      - net
-    ports:
-      - ${ENV_CHAT_HTTP_EXTERNAL_PORT}:6000
-      - ${ENV_CHAT_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
 
 
   postgres_db:
@@ -75,30 +46,6 @@ services:
       - net
     ports:
       - 15432:5432
-
-
-  tarantool_db:
-    # image: tarantool/tarantool:2.11
-    # image: tarantool/tarantool:3.3.2
-    build:
-      context: ./tarantool/
-      dockerfile: Dockerfile
-    container_name: "tarantool_db"
-    hostname: "tarantool_db"
-    # restart: on-failure
-    # depends_on:
-    #   postgres_db:
-    #     condition: service_healthy
-    volumes:
-      - ./tarantool/scripts:/opt/tarantool
-      # - ./tarantool/tarantool_volume:/var/lib/tarantool
-      # - tarantool_storage:/var/lib/tarantool
-    networks:
-      - net
-    ports:
-      - "3301:3301"
-      - "8081:8081" # админка
-    command: tarantool /opt/tarantool/udf.lua
 
 
   prometheus:
@@ -177,22 +124,3 @@ services:
       - /var/run:/var/run:rw
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
-
-
-  k6:
-    image: grafana/k6
-    container_name: "k6"
-    hostname: "k6"
-    # restart: always
-    environment:
-      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write
-      - K6_PROMETHEUS_RW_TREND_STATS=p(95),p(99),min,max,count,sum
-      - TEST_HOST=http://social_srv:6000
-    depends_on:
-      - prometheus
-      - social_srv
-    networks:
-      - net
-    volumes:
-      - ./k6_tests:/tests
-    # command: run --verbose --out experimental-prometheus-rw --http-debug="full" /tests/user_search.js

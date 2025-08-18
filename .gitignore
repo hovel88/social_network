@@ -5,12 +5,13 @@ _extern/*
 
 **/*.pb.*
 
-postgres_db
-replication/postgres_m0_data
-replication/postgres_r1_data
-replication/postgres_r2_data
-sharding/healthcheck_volume
-sharding/postgres_master_data
+postgresql/single
+postgresql/replication/postgres_m0_data
+postgresql/replication/postgres_r1_data
+postgresql/replication/postgres_r2_data
+postgresql/sharding/healthcheck_volume
+postgresql/sharding/postgres_master_data
+
 service/cmake-build
 
 *.o

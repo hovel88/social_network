@@ -5,10 +5,10 @@
 * развернуть систему
 
 ```bash
-docker compose -f docker-compose.service-single.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml up -d
+docker compose -f docker-compose.hw-02.yml up -d
 
 # по окончании работы остановить систему командой
-docker compose -f docker-compose.service-single.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml down --remove-orphans
+docker compose -f docker-compose.hw-02.yml down --remove-orphans
 ```
 
 ### Генерация правдоподобных данных
@@ -47,7 +47,7 @@ Required-by:
 
 Полученный файл нужно загрузить в базу. Для этого:
 
-* первоначально очистить каталог `postgres_db` от старой базы после экспериментов по ДЗ 1,
+* первоначально очистить каталог `postgresql/single` от старой базы после экспериментов по ДЗ 1,
 
 * скопировать сгенерированный файл в контейнер БД
 

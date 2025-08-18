@@ -8,7 +8,7 @@
 
 Для разворачивания системы используется docker-compose файл:
 
-* `docker-compose.service-inmemory.yml`
+* `docker-compose.hw-07.yml`
 
 Тут Docker развернет наш сервис **social_srv**, один инстанс PostgreSQL **postgres_db** и один инстанс Tarantool **tarantool_db**.
 
@@ -76,10 +76,10 @@
 * развернуть систему
 
 ```bash
-docker compose -f docker-compose.service-inmemory.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml up -d
+docker compose -f docker-compose.hw-07.yml up -d
 
 # по окончании работы остановить систему командой
-docker compose -f docker-compose.service-inmemory.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml down --remove-orphans
+docker compose -f docker-compose.hw-07.yml down --remove-orphans
 ```
 
 * убедиться, что таблица `dialogs` существует, для этого
@@ -121,7 +121,7 @@ SELECT id FROM users LIMIT 6;"
 * запускаем нагрузочный тест командой
 
 ```bash
-docker compose -f docker-compose.service-inmemory.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml run k6 run --verbose --out experimental-prometheus-rw --http-debug="full" /tests/dialogs_send_and_list.js
+docker compose -f docker-compose.hw-07.yml run k6 run --verbose --out experimental-prometheus-rw --http-debug="full" /tests/dialogs_send_and_list.js
 ```
 
 * собираем результаты теста
@@ -132,7 +132,7 @@ docker compose -f docker-compose.service-inmemory.yml -f docker-compose.monitori
 * запускаем нагрузочный тест командой
 
 ```bash
-docker compose -f docker-compose.service-inmemory.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml run k6 run --verbose --out experimental-prometheus-rw --http-debug="full" /tests/dialogs_send_and_list.js
+docker compose -f docker-compose.hw-07.yml run k6 run --verbose --out experimental-prometheus-rw --http-debug="full" /tests/dialogs_send_and_list.js
 ```
 
 * в логах сервиса социальной сети можно видеть как чередуются запросы

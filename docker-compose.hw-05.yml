@@ -5,9 +5,6 @@ networks:
 services:
   social_srv:
     image: ${ENV_SOCIAL_SERVICE_IMAGE}
-    build:
-      context: ./service/
-      dockerfile: Dockerfile
     container_name: "social_srv"
     hostname: "social_srv"
     # restart: on-failure
@@ -40,7 +37,7 @@ services:
       - PGPASSWORD="${ENV_POSTGRES_PASSWORD}"
       - POSTGRES_HOST_AUTH_METHOD=trust
     volumes:
-      - ./sharding/postgres_master_data:/var/lib/postgresql/data
+      - ./postgresql/sharding/postgres_master_data:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD", "pg_isready" ]
       interval: 10s
@@ -61,8 +58,8 @@ services:
     depends_on: [postgres_manager]
     environment: *AUTH
     volumes:
-      - ./sharding/wait-for-manager.sh:/wait-for-manager.sh
-      - ./sharding/healthcheck_volume:/healthcheck
+      - ./postgresql/sharding/wait-for-manager.sh:/wait-for-manager.sh
+      - ./postgresql/sharding/healthcheck_volume:/healthcheck
     networks:
       - net
     command: "/wait-for-manager.sh"
@@ -80,6 +77,6 @@ services:
       - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
     volumes:
       - "${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock"
-      - ./sharding/healthcheck_volume:/healthcheck
+      - ./postgresql/sharding/healthcheck_volume:/healthcheck
     networks:
       - net

@@ -1,8 +1,53 @@
+networks:
+  net:
+    driver: bridge
+
 volumes:
   prometheus-storage:
   grafana-storage:
 
 services:
+  social_srv:
+    image: ${ENV_SOCIAL_SERVICE_IMAGE}
+    container_name: "social_srv"
+    hostname: "social_srv"
+    # restart: on-failure
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    environment:
+      - PGSQL_MASTER_URL=postgresql://postgres:${ENV_POSTGRES_PASSWORD}@postgres_db:5432/postgres
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=4096
+      - HTTP_THREADS_COUNT=1
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
+    ports:
+      - ${ENV_SOCIAL_HTTP_EXTERNAL_PORT}:6000
+      - ${ENV_SOCIAL_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
+
+
+  postgres_db:
+    image: postgres:16-alpine
+    container_name: "postgres_db"
+    hostname: "postgres_db"
+    # restart: on-failure
+    environment:
+      - POSTGRES_PASSWORD=${ENV_POSTGRES_PASSWORD}
+    volumes:
+      - ./postgresql/single:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - net
+    ports:
+      - 15432:5432
+
+
   prometheus:
     image: prom/prometheus:v2.37.9
     container_name: "prometheus"
@@ -79,3 +124,22 @@ services:
       - /var/run:/var/run:rw
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
+
+
+  k6:
+    image: grafana/k6
+    container_name: "k6"
+    hostname: "k6"
+    # restart: always
+    environment:
+      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write
+      - K6_PROMETHEUS_RW_TREND_STATS=p(95),p(99),min,max,count,sum
+      - TEST_HOST=http://social_srv:6000
+    depends_on:
+      - prometheus
+      - social_srv
+    networks:
+      - net
+    volumes:
+      - ./k6_tests:/tests
+    # command: run --verbose --out experimental-prometheus-rw --http-debug="full" /tests/user_search.js

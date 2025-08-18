@@ -48,7 +48,7 @@
 
 ### Разворачивание нескольких БД в режиме репликации
 
-* в каталоге `replication` создать 3 подкаталога для данных каждой БД:
+* в каталоге `postgresql/replication` создать 3 подкаталога для данных каждой БД:
   * `postgres_m0_data` - база мастера
   * `postgres_r1_data` - база реплики 1
   * `postgres_r2_data` - база реплики 2
@@ -56,7 +56,7 @@
 * развернуть контейнер **postgres_m0**
 
 ```bash
-docker compose -f docker-compose.service-replication.yml run -d postgres_m0
+docker compose -f docker-compose.hw-03.yml run -d postgres_m0
 ```
 
 * сгенерировать как в ДЗ 1 тестовый набор пользователей
@@ -165,8 +165,8 @@ primary_conninfo = 'host=postgres_m0 port=5432 user=replicator password=rpass ap
 * запустить контейнеры реплик **postgres_r1** и **postgres_r2**
 
 ```bash
-docker compose -f docker-compose.service-replication.yml run -d postgres_r1
-docker compose -f docker-compose.service-replication.yml run -d postgres_r2
+docker compose -f docker-compose.hw-03.yml run -d postgres_r1
+docker compose -f docker-compose.hw-03.yml run -d postgres_r2
 ```
 
 * убедиться, что обе реплики работают в асинхронном режиме на **postgres_m0**
@@ -210,43 +210,43 @@ SELECT application_name, sync_state FROM pg_stat_replication;"
 ### Тест на распределенное чтение
 
 * подготовить систему без учета реплик
-  * в файле `docker-compose.service-replication.yml` для сервиса **social_srv** закомментировать переменные окружения:
+  * в файле `docker-compose.hw-03.yml` для сервиса **social_srv** закомментировать переменные окружения:
     * `PGSQL_REPLICA_1_URL`
     * `PGSQL_REPLICA_2_URL`
 
   * развернуть
 
   ```bash
-  docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml up -d
+  docker compose -f docker-compose.hw-03.yml up -d
 
   # по окончании работы остановить систему командой
-  docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml down --remove-orphans
+  docker compose -f docker-compose.hw-03.yml down --remove-orphans
   ```
 
   * запустить тест
 
   ```bash
-  docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml run k6 run --verbose --out experimental-prometheus-rw /tests/search_and_get.js
+  docker compose -f docker-compose.hw-03.yml run k6 run --verbose --out experimental-prometheus-rw /tests/search_and_get.js
   ```
 
 * подготовить систему с учетом реплик
-  * в файле `docker-compose.service-replication.yml` для сервиса **social_srv** оставить переменные окружения:
+  * в файле `docker-compose.hw-03.yml` для сервиса **social_srv** оставить переменные окружения:
     * `PGSQL_REPLICA_1_URL`
     * `PGSQL_REPLICA_2_URL`
 
   * развернуть
 
   ```bash
-  docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml up -d
+  docker compose -f docker-compose.hw-03.yml up -d
 
   # по окончании работы остановить систему командой
-  docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml down --remove-orphans
+  docker compose -f docker-compose.hw-03.yml down --remove-orphans
   ```
 
   * запустить тест
 
   ```bash
-  docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml run k6 run --verbose --out experimental-prometheus-rw /tests/search_and_get.js
+  docker compose -f docker-compose.hw-03.yml run k6 run --verbose --out experimental-prometheus-rw /tests/search_and_get.js
   ```
 
 * результаты тестов K6, чтение только из одной базы
@@ -348,21 +348,21 @@ default ✓ [======================================] 000/200 VUs  5m0s
 * снова развернуть
 
 ```bash
-docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml up -d
+docker compose -f docker-compose.hw-03.yml up -d
 # по окончании работы остановить систему командой
-docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml down --remove-orphans
+docker compose -f docker-compose.hw-03.yml down --remove-orphans
 ```
 
 * запустить тест
 
 ```bash
-docker compose -f docker-compose.service-replication.yml -f docker-compose.monitoring.yml -f docker-compose.loadtest.yml run k6 run --verbose --out experimental-prometheus-rw /tests/user_register.js
+docker compose -f docker-compose.hw-03.yml run k6 run --verbose --out experimental-prometheus-rw /tests/user_register.js
 ```
 
 * где-то через 2 минуты остановить реплику **postgres_r1**
 
 ```bash
-docker compose -f docker-compose.service-replication.yml stop postgres_r1
+docker compose -f docker-compose.hw-03.yml stop postgres_r1
 ```
 
 * дождаться окончания нагрузки на запись
@@ -427,13 +427,13 @@ WHERE first_name LIKE 'User_%' AND second_name LIKE 'Last_%';"
 * остановить мастер **postgres_m0**
 
 ```bash
-docker compose -f docker-compose.service-replication.yml stop postgres_m0
+docker compose -f docker-compose.hw-03.yml stop postgres_m0
 ```
 
 * снова запустить реплику **postgres_r1**
 
 ```bash
-docker compose -f docker-compose.service-replication.yml start postgres_r1
+docker compose -f docker-compose.hw-03.yml start postgres_r1
 ```
 
 * проверить на реплике **postgres_r1**, сколько данных мы записали.  
