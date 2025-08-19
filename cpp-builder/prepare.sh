@@ -2,7 +2,7 @@
 set -eux
 
 TARGET_IMAGE_NAME=alpine-cpp-builder
-TARGET_IMAGE_VERSION=1
+TARGET_IMAGE_VERSION=2
 
 docker build \
     -f Dockerfile \

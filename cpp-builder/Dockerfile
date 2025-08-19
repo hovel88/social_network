@@ -13,6 +13,7 @@ RUN apk update \
         zlib zlib-dev zlib-static \
         brotli-dev brotli-static \
         ossp-uuid-dev ossp-uuid-libs \
+        librdkafka-dev lz4-dev lz4-static \
  && apk add git cmake \
  && rm -rf /var/cache/apk/*
 
