@@ -39,6 +39,8 @@ private:
 
     std::shared_ptr<grpc::Channel> grpc_channel_{nullptr};
 
+    std::shared_ptr<KafkaProducer> kafka_producer{nullptr};
+
     std::shared_ptr<CacheService>      service_cache_{nullptr};
     std::shared_ptr<DatabaseService>   service_database_{nullptr};
     std::shared_ptr<AuthService>       service_auth_{nullptr};

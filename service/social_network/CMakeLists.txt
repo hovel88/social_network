@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 set(SERVICE_TARGET          social_network)
-set(SERVICE_VERSION         8)
+set(SERVICE_VERSION         6)
 project(${SERVICE_TARGET}
     VERSION                 ${SERVICE_VERSION}
     LANGUAGES               CXX
@@ -126,6 +126,7 @@ find_static_library(LIB_CARES_STATIC cares)
 find_static_library(LIB_EV_STATIC ev)
 find_static_library(LIB_AMQPCPP_STATIC amqpcpp)
 find_static_library(LIB_REACTCPP_STATIC reactcpp)
+find_static_library(LIB_LZ4_STATIC lz4)
 
 target_link_libraries(${SERVICE_LIB}
     PRIVATE                 gRPC::grpc++
@@ -137,6 +138,7 @@ target_link_libraries(${SERVICE_LIB}
                             bcrypt
                             pqxx
                             pq
+                            rdkafka++
                             ${LIB_BROTLIDEC_STATIC}
                             ${LIB_BROTLIENC_STATIC}
                             ${LIB_BROTLICOM_STATIC}
@@ -145,6 +147,7 @@ target_link_libraries(${SERVICE_LIB}
                             ${LIB_AMQPCPP_STATIC}
                             ${LIB_REACTCPP_STATIC}
                             ${LIB_EV_STATIC}
+                            ${LIB_LZ4_STATIC}
                             prometheus-cpp::core
                             prometheus-cpp::pull
                             OpenSSL::SSL

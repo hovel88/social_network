@@ -29,6 +29,9 @@ const uint16_t    config_data::config_def::pgsql_port = 5432;
 const std::string config_data::config_def::grpc_url{"grpc://localhost:50051"};
 const uint16_t    config_data::config_def::grpc_port = 50051;
 
+const std::string config_data::config_def::kafka_url{"tcp://localhost:9092"};
+const uint16_t    config_data::config_def::kafka_port = 9092;
+
 const std::string config_data::config_def::http_listening{"0.0.0.0:6000"};
 const uint16_t    config_data::config_def::http_port = 6000;
 
@@ -55,6 +58,8 @@ void config_data::config_s::clear()
     pgsql_replica.clear();
 
     grpc_url = config_def::grpc_url;
+
+    kafka_url = config_def::kafka_url;
 
     http_listening      = config_def::http_listening;
     http_threads_count  = config_def::http_threads_count;
@@ -222,6 +227,41 @@ std::list<std::string> config_data::config_s::validate()
     }
 
     try {
+        if (kafka_url.find("://") == std::string::npos) {
+            auto endpoint_with_scheme = std::format("tcp://{}", kafka_url);
+            kafka_url.swap(endpoint_with_scheme);
+        }
+        UrlHelpers::Url url(kafka_url);
+
+        // верификация схемы URL
+        std::string scheme = url.get_scheme();
+        if (!scheme.empty() && scheme != "tcp")
+            throw std::runtime_error(std::format("scheme should be 'tcp'"));
+
+        // верификация номера порта
+        NetHelpers::SocketAddress sock_addr(std::format("{}:{}", url.get_host(), url.get_specified_port()));
+        if (sock_addr.port() == 0) url.set_port(config_def::kafka_port);
+
+        // верификация сегментов пути URL
+        url.set_fragment("");
+        url.set_path("");
+
+        // верификация "login:password" части URL
+        // переупаковываем URL, убирая "чувствительную" часть
+        url.set_user_info("");
+        kafka_url = url.to_string();
+    }
+    catch (NetHelpers::DnsException& ex) {
+        errors.push_back(std::format("validation error 'kafka.url={}': {}",
+            kafka_url, ex.what()));
+    }
+    catch (std::exception& ex) {
+        errors.push_back(std::format("validation error 'kafka.url={}': {}",
+            kafka_url, ex.what()));
+        kafka_url = config_def::kafka_url;
+    }
+
+    try {
         NetHelpers::SocketAddress sock_addr(http_listening);
         if (sock_addr.port() == 0) {
             http_listening = std::format("{}:{}", sock_addr.host().to_string(), config_def::http_port);
@@ -333,6 +373,16 @@ Configuration::Configuration(std::shared_ptr<Logging::Logger> logger)
     }
 
     {
+        const std::string key("KAFKA_URL");
+        if (EnvironmentHelpers::has(key)) {
+            auto env = EnvironmentHelpers::get(key);
+            auto val = StringHelpers::trim(env.value());
+            kafka_url = val;
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+        }
+    }
+
+    {
         const std::string key("HTTP_LISTENING");
         if (EnvironmentHelpers::has(key)) {
             auto env = EnvironmentHelpers::get(key);
@@ -412,6 +462,8 @@ for (int i = 0; const auto& replica : pgsql_replica) {
 }
 
     ss << "\n  grpc.url="               << std::quoted(grpc_url);
+
+    ss << "\n  kafka.url="              << std::quoted(kafka_url);
 
     ss << "\n  http.listening="         << std::quoted(http_listening);
     ss << "\n  http.threads_count="     << http_threads_count;

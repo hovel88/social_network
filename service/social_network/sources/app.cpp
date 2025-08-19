@@ -105,6 +105,8 @@ void App::run()
     LOGGER_INFOR(std::format("running..."));
 
     try {
+        db_start();
+
         {
             const Configuration& configuration = Configuration::instance();
             configuration.show_configuration();
@@ -118,7 +120,7 @@ void App::run()
             grpc_channel_ = grpc::CreateChannel(std::format("{}:{}", url.get_host(), url.get_port()), grpc::InsecureChannelCredentials()); // без SSL/TLS
         }
 
-        db_start();
+        kafka_producer = std::make_shared<KafkaProducer>(logger_);
 
         // создаем сервисы
         service_cache_       = std::make_shared<CacheService>(CACHE_CAPACITY, std::chrono::seconds(CACHE_TTL_SEC));
@@ -126,7 +128,7 @@ void App::run()
         service_auth_        = std::make_shared<AuthService>(logger_, metrics_, service_database_);
         service_user_http_   = std::make_unique<HttpUserService>(logger_, metrics_, service_database_);
         service_friend_http_ = std::make_unique<HttpFriendService>(logger_, metrics_, service_database_, service_cache_);
-        service_post_http_   = std::make_unique<HttpPostService>(logger_, metrics_, service_database_, service_cache_);
+        service_post_http_   = std::make_unique<HttpPostService>(logger_, metrics_, service_database_, service_cache_, kafka_producer);
         service_dialog_http_ = std::make_unique<HttpDialogService>(logger_, metrics_, grpc_channel_);
 
         on_liveness_check([this]()->bool {

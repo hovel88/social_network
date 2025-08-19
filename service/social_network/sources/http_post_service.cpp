@@ -1,6 +1,7 @@
 #include <format>
 #include <ctime>
 #include <nlohmann/json.hpp>
+#include <librdkafka/rdkafkacpp.h>
 #include "http_post_service.h"
 #include "app_auth_service.h"
 
@@ -223,6 +224,16 @@ bool HttpPostService::post_create_handler(const drogon::HttpRequestPtr& req, dro
                     for (const auto& friend_id : friends.friend_ids) {
                         cache_->add_post_to_feed(friend_id, rv.post.value());
                     }
+                }
+
+                // отправляем пост в Kafka
+                if (kafka_producer_) {
+                    nlohmann::json event = {{"event_type",  "new_post"},
+                                            {"created_ms",  rv.post.value().created_at_msec},
+                                            {"post_id",     rv.post.value().id},
+                                            {"content",     content},
+                                            {"author_id",   user_id}};
+                    kafka_producer_->produce("user_posts", event.dump());
                 }
 
                 // успешная регистрация поста

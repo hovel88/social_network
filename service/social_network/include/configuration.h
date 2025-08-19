@@ -27,6 +27,9 @@ namespace config_data {
         extern const std::string grpc_url;
         extern const uint16_t    grpc_port;
 
+        extern const std::string kafka_url;
+        extern const uint16_t    kafka_port;
+
         extern const std::string http_listening;
         extern const uint16_t    http_port;
         extern const int         http_threads_count;
@@ -59,6 +62,8 @@ namespace config_data {
         std::vector<pgsql_s> pgsql_replica;
 
         std::string grpc_url;
+
+        std::string kafka_url;
 
         std::string http_listening;
         int         http_threads_count;
