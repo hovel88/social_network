@@ -18,15 +18,6 @@ namespace config_data {
 
     namespace config_def {
 
-        extern const std::string pgsql_url;
-        extern const uint16_t    pgsql_port;
-        extern const std::string pgsql_database;
-        extern const std::string pgsql_login;
-        extern const std::string pgsql_password;
-
-        extern const std::string grpc_url;
-        extern const uint16_t    grpc_port;
-
         extern const std::string kafka_url;
         extern const uint16_t    kafka_port;
 
@@ -49,17 +40,6 @@ namespace config_data {
     } // namespace config_min
 
     struct config_s {
-
-        struct pgsql_s {
-            std::string url;
-            std::string login;
-            std::string password;
-        };
-
-        pgsql_s              pgsql_master;
-        std::vector<pgsql_s> pgsql_replica;
-
-        std::string grpc_url;
 
         std::string kafka_url;
 

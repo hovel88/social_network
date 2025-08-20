@@ -1,0 +1,11 @@
+FROM alpine:3.19.7
+
+LABEL org.opencontainers.image.version="@SERVICE_VERSION@"
+
+RUN apk update \
+ && apk add libstdc++ libuuid ossp-uuid-libs librdkafka \
+ && rm -rf /var/cache/apk/*
+
+WORKDIR /service
+COPY bin/@SERVICE_TARGET@ /service
+ENTRYPOINT ["./@SERVICE_TARGET@"]
