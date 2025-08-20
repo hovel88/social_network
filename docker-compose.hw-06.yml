@@ -51,72 +51,81 @@ services:
       - net
     ports:
       - ${ENV_CHAT_HTTP_EXTERNAL_PORT}:6000
-      - ${ENV_CHAT_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
+      # - ${ENV_CHAT_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
 
 
-  # ws1:
-  #   image: ${ENV_WS_SERVICE_IMAGE}
-  #   container_name: "ws1"
-  #   hostname: "ws1"
-  #   # restart: on-failure
-  #   depends_on:
-  #     - kafka
-  #     - social_srv
-  #   environment:
-  #     - HTTP_LISTENING=0.0.0.0:6000
-  #     - HTTP_QUEUE_CAPACITY=4096
-  #     - HTTP_THREADS_COUNT=1
-  #     - PROMETHEUS_PORT=6001
-  #   networks:
-  #     - net
+  ws_srv1:
+    image: ${ENV_WS_SERVICE_IMAGE}
+    container_name: "ws_srv1"
+    hostname: "ws_srv1"
+    # restart: on-failure
+    depends_on:
+      - kafka
+      - social_srv
+    environment:
+      - KAFKA_URL=tcp://kafka:9092
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=4096
+      - HTTP_THREADS_COUNT=1
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
+    # ports:
+    #   - ${ENV_WS_HTTP_EXTERNAL_PORT}:6000
+    #   # - ${ENV_WS_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
 
 
-  # ws2:
-  #   image: ${ENV_WS_SERVICE_IMAGE}
-  #   container_name: "ws2"
-  #   hostname: "ws2"
-  #   # restart: on-failure
-  #   depends_on:
-  #     - kafka
-  #     - social_srv
-  #   environment:
-  #     - HTTP_LISTENING=0.0.0.0:6000
-  #     - HTTP_QUEUE_CAPACITY=4096
-  #     - HTTP_THREADS_COUNT=1
-  #     - PROMETHEUS_PORT=6001
-  #   networks:
-  #     - net
+  ws_srv2:
+    image: ${ENV_WS_SERVICE_IMAGE}
+    container_name: "ws_srv2"
+    hostname: "ws_srv2"
+    # restart: on-failure
+    depends_on:
+      - kafka
+      - social_srv
+    environment:
+      - KAFKA_URL=tcp://kafka:9092
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=4096
+      - HTTP_THREADS_COUNT=1
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
 
 
-  # ws3:
-  #   image: ${ENV_WS_SERVICE_IMAGE}
-  #   container_name: "ws3"
-  #   hostname: "ws3"
-  #   # restart: on-failure
-  #   depends_on:
-  #     - kafka
-  #     - social_srv
-  #   environment:
-  #     - HTTP_LISTENING=0.0.0.0:6000
-  #     - HTTP_QUEUE_CAPACITY=4096
-  #     - HTTP_THREADS_COUNT=1
-  #     - PROMETHEUS_PORT=6001
-  #   networks:
-  #     - net
+  ws_srv3:
+    image: ${ENV_WS_SERVICE_IMAGE}
+    container_name: "ws_srv3"
+    hostname: "ws_srv3"
+    # restart: on-failure
+    depends_on:
+      - kafka
+      - social_srv
+    environment:
+      - KAFKA_URL=tcp://kafka:9092
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=4096
+      - HTTP_THREADS_COUNT=1
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
 
 
-  # nginx:
-  #   image: nginx
-  #   depends_on:
-  #     - ws1
-  #     - ws2
-  #     - ws3
-  #   volumes:
-  #     - ./ws_queue/nginx/nginx.conf:/etc/nginx/nginx.conf
-  #   networks:
-  #     - net
-  #   ports:
-  #     - 8080:80
+  nginx:
+    image: nginx:1.28.0-alpine
+    container_name: "nginx"
+    hostname: "nginx"
+    # restart: on-failure
+    depends_on:
+      - ws_srv1
+      - ws_srv2
+      - ws_srv3
+    volumes:
+      - ./ws_queue/nginx/nginx.conf:/etc/nginx/nginx.conf
+    networks:
+      - net
+    ports:
+      - 8080:80
 
 
   kafka:
