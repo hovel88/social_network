@@ -239,6 +239,9 @@ void App::http_start()
 
         // middleware
 
+        // plugins
+        http_server_->addPlugin("KafkaPlugin", {}, {});
+
         // обработчики
         http_server_->registerHandler("/livez",
             [this](const drogon::HttpRequestPtr& /*req*/, std::function<void (const drogon::HttpResponsePtr&)>&& callback) {
