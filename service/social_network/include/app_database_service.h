@@ -2,9 +2,9 @@
 
 #include <optional>
 #include <vector>
-#include "logger/logger.h"
 #include "app_metrics.h"
 #include "app_connection_pool.h"
+#include "configuration.h"
 
 class DatabaseService
 {
@@ -74,10 +74,9 @@ public:
     DatabaseService& operator=(const DatabaseService&) = delete;
     DatabaseService& operator=(DatabaseService&&) = delete;
 
-    explicit DatabaseService(std::shared_ptr<Logging::Logger> logger,
-                             std::shared_ptr<Metrics> metrics,
+    explicit DatabaseService(std::shared_ptr<Metrics> metrics,
                              std::shared_ptr<ConnectionPool> db_pool)
-    :   logger_(std::move(logger)),
+    :   logger_(Configuration::instance().get_logger()),
         metrics_(std::move(metrics)),
         db_pool_(std::move(db_pool)) {}
 

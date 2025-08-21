@@ -1,9 +1,9 @@
 #pragma once
 
 #include <drogon/drogon.h>
-#include "logger/logger.h"
 #include "app_metrics.h"
 #include "app_database_service.h"
+#include "configuration.h"
 
 class HttpUserService
 {
@@ -15,10 +15,9 @@ public:
     HttpUserService& operator=(const HttpUserService&) = delete;
     HttpUserService& operator=(HttpUserService&&) = delete;
 
-    explicit HttpUserService(std::shared_ptr<Logging::Logger> logger,
-                             std::shared_ptr<Metrics> metrics,
+    explicit HttpUserService(std::shared_ptr<Metrics> metrics,
                              std::shared_ptr<DatabaseService> db)
-    :   logger_(std::move(logger)),
+    :   logger_(Configuration::instance().get_logger()),
         metrics_(std::move(metrics)),
         db_(std::move(db)) {}
 

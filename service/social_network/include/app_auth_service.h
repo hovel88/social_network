@@ -2,9 +2,9 @@
 
 #include <drogon/drogon.h>
 #include <regex>
-#include "logger/logger.h"
 #include "app_metrics.h"
 #include "app_database_service.h"
+#include "configuration.h"
 
 class AuthService
 {
@@ -16,10 +16,9 @@ public:
     AuthService& operator=(const AuthService&) = delete;
     AuthService& operator=(AuthService&&) = delete;
 
-    explicit AuthService(std::shared_ptr<Logging::Logger> logger,
-                         std::shared_ptr<Metrics> metrics,
+    explicit AuthService(std::shared_ptr<Metrics> metrics,
                          std::shared_ptr<DatabaseService> db)
-    :   logger_(std::move(logger)),
+    :   logger_(Configuration::instance().get_logger()),
         metrics_(std::move(metrics)),
         db_(std::move(db)) {}
 

@@ -3,8 +3,8 @@
 #include <drogon/drogon.h>
 #include <grpcpp/grpcpp.h>
 #include <chat_service.grpc.pb.h>
-#include "logger/logger.h"
 #include "app_metrics.h"
+#include "configuration.h"
 
 class HttpDialogService
 {
@@ -23,10 +23,9 @@ public:
     HttpDialogService& operator=(const HttpDialogService&) = delete;
     HttpDialogService& operator=(HttpDialogService&&) = delete;
 
-    explicit HttpDialogService(std::shared_ptr<Logging::Logger> logger,
-                               std::shared_ptr<Metrics> metrics,
+    explicit HttpDialogService(std::shared_ptr<Metrics> metrics,
                                std::shared_ptr<grpc::Channel> channel)
-    :   logger_(std::move(logger)),
+    :   logger_(Configuration::instance().get_logger()),
         metrics_(std::move(metrics)),
         stub_(social_network::chats::DialogService::NewStub(std::move(channel))) {}
 

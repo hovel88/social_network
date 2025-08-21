@@ -1,11 +1,11 @@
 #pragma once
 
 #include <drogon/drogon.h>
-#include "logger/logger.h"
 #include "app_metrics.h"
 #include "app_connection_pool.h"
 #include "app_database_service.h"
 #include "app_cache_service.h"
+#include "configuration.h"
 #include "kafka_client_producer.h"
 
 class HttpPostService
@@ -18,12 +18,11 @@ public:
     HttpPostService& operator=(const HttpPostService&) = delete;
     HttpPostService& operator=(HttpPostService&&) = delete;
 
-    explicit HttpPostService(std::shared_ptr<Logging::Logger> logger,
-                             std::shared_ptr<Metrics> metrics,
+    explicit HttpPostService(std::shared_ptr<Metrics> metrics,
                              std::shared_ptr<DatabaseService> db,
                              std::shared_ptr<CacheService> cache,
                              std::shared_ptr<KafkaProducer> kafka_producer)
-    :   logger_(std::move(logger)),
+    :   logger_(Configuration::instance().get_logger()),
         metrics_(std::move(metrics)),
         db_(std::move(db)),
         cache_(std::move(cache)),

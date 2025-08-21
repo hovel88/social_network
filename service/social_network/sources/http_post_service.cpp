@@ -218,9 +218,9 @@ bool HttpPostService::post_create_handler(const drogon::HttpRequestPtr& req, dro
             if (!rv.post.has_value()) {
                 err = std::format("can't register post");
             } else {
+                auto friends = db_->get_friends(user_id);
                 if (cache_) {
                     // делаем так, чтобы новый пост появился в лентах друзей
-                    auto friends = db_->get_friends(user_id);
                     for (const auto& friend_id : friends.friend_ids) {
                         cache_->add_post_to_feed(friend_id, rv.post.value());
                     }
@@ -228,12 +228,11 @@ bool HttpPostService::post_create_handler(const drogon::HttpRequestPtr& req, dro
 
                 // отправляем пост в Kafka
                 if (kafka_producer_) {
-                    nlohmann::json event = {{"event_type",  "new_post"},
-                                            {"created_ms",  rv.post.value().created_at_msec},
+                    nlohmann::json event = {{"created_ms",  rv.post.value().created_at_msec},
                                             {"post_id",     rv.post.value().id},
                                             {"content",     content},
                                             {"author_id",   user_id}};
-                    kafka_producer_->produce("user_posts", event.dump());
+                    kafka_producer_->produce_to_user_topics(friends.friend_ids, event.dump());
                 }
 
                 // успешная регистрация поста

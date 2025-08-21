@@ -1,10 +1,10 @@
 #pragma once
 
 #include <drogon/drogon.h>
-#include "logger/logger.h"
 #include "app_metrics.h"
 #include "app_database_service.h"
 #include "app_cache_service.h"
+#include "configuration.h"
 
 class HttpFriendService
 {
@@ -16,11 +16,10 @@ public:
     HttpFriendService& operator=(const HttpFriendService&) = delete;
     HttpFriendService& operator=(HttpFriendService&&) = delete;
 
-    explicit HttpFriendService(std::shared_ptr<Logging::Logger> logger,
-                               std::shared_ptr<Metrics> metrics,
+    explicit HttpFriendService(std::shared_ptr<Metrics> metrics,
                                std::shared_ptr<DatabaseService> db,
                                std::shared_ptr<CacheService> cache)
-    :   logger_(std::move(logger)),
+    :   logger_(Configuration::instance().get_logger()),
         metrics_(std::move(metrics)),
         db_(std::move(db)),
         cache_(std::move(cache)) {}
