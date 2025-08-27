@@ -55,7 +55,9 @@ void config_data::config_s::clear()
     pgsql_master.login.clear();
     pgsql_master.password.clear();
 
-    pgsql_replica.clear();
+    pgsql_master.url = config_def::pgsql_url;
+    pgsql_replica.login.clear();
+    pgsql_replica.password.clear();
 
     grpc_url = config_def::grpc_url;
 
@@ -131,65 +133,63 @@ std::list<std::string> config_data::config_s::validate()
     if (pgsql_master.login.empty())    pgsql_master.login    = config_def::pgsql_login;
     if (pgsql_master.password.empty()) pgsql_master.password = config_def::pgsql_password;
 
-    for (auto& replica : pgsql_replica) {
-        try {
-            if (replica.url.find("://") == std::string::npos) {
-                auto endpoint_with_scheme = std::format("postgresql://{}", replica.url);
-                replica.url.swap(endpoint_with_scheme);
-            }
-            UrlHelpers::Url url(replica.url);
-
-            // верификация схемы URL
-            std::string scheme = url.get_scheme();
-            if (!scheme.empty() && scheme != "postgresql")
-                throw std::runtime_error(std::format("scheme should be 'postgresql'"));
-
-            // верификация номера порта
-            NetHelpers::SocketAddress sock_addr(std::format("{}:{}", url.get_host(), url.get_specified_port()));
-            if (sock_addr.port() == 0) url.set_port(config_def::pgsql_port);
-
-            // верификация сегментов пути URL
-            std::vector<std::string> segments;
-            url.set_fragment("");
-            url.get_path_segments(segments);
-            if (segments.empty()) url.set_path(config_def::pgsql_database);
-
-            // верификация "login:password" части URL
-            // переупаковываем URL, убирая "чувствительную" часть
-            std::string login;
-            std::string password;
-            std::string userinfo = url.get_user_info(); // "login:password"
-            if (!userinfo.empty()) {
-                auto colon = userinfo.find(':');
-                if (colon != std::string::npos) {
-                    login    = userinfo.substr(0, colon);
-                    password = userinfo.substr(colon+1);
-                } else {
-                    login = userinfo;
-                }
-            }
-            if (replica.login.empty()) {
-                replica.login = !login.empty() ? login : config_def::pgsql_login;
-            }
-            if (replica.password.empty()) {
-                replica.password = !password.empty() ? password : config_def::pgsql_password;
-            }
-            url.set_user_info("");
-            replica.url = url.to_string();
+    try {
+        if (pgsql_replica.url.find("://") == std::string::npos) {
+            auto endpoint_with_scheme = std::format("postgresql://{}", pgsql_replica.url);
+            pgsql_replica.url.swap(endpoint_with_scheme);
         }
-        catch (NetHelpers::DnsException& ex) {
-            errors.push_back(std::format("validation error 'pgsql.endpoint={}': {}",
-                replica.url, ex.what()));
-        }
-        catch (std::exception& ex) {
-            errors.push_back(std::format("validation error 'pgsql.endpoint={}': {}",
-                replica.url, ex.what()));
-            replica.url = config_def::pgsql_url;
-        }
+        UrlHelpers::Url url(pgsql_replica.url);
 
-        if (replica.login.empty())    replica.login    = config_def::pgsql_login;
-        if (replica.password.empty()) replica.password = config_def::pgsql_password;
+        // верификация схемы URL
+        std::string scheme = url.get_scheme();
+        if (!scheme.empty() && scheme != "postgresql")
+            throw std::runtime_error(std::format("scheme should be 'postgresql'"));
+
+        // верификация номера порта
+        NetHelpers::SocketAddress sock_addr(std::format("{}:{}", url.get_host(), url.get_specified_port()));
+        if (sock_addr.port() == 0) url.set_port(config_def::pgsql_port);
+
+        // верификация сегментов пути URL
+        std::vector<std::string> segments;
+        url.set_fragment("");
+        url.get_path_segments(segments);
+        if (segments.empty()) url.set_path(config_def::pgsql_database);
+
+        // верификация "login:password" части URL
+        // переупаковываем URL, убирая "чувствительную" часть
+        std::string login;
+        std::string password;
+        std::string userinfo = url.get_user_info(); // "login:password"
+        if (!userinfo.empty()) {
+            auto colon = userinfo.find(':');
+            if (colon != std::string::npos) {
+                login    = userinfo.substr(0, colon);
+                password = userinfo.substr(colon+1);
+            } else {
+                login = userinfo;
+            }
+        }
+        if (pgsql_replica.login.empty()) {
+            pgsql_replica.login = !login.empty() ? login : config_def::pgsql_login;
+        }
+        if (pgsql_replica.password.empty()) {
+            pgsql_replica.password = !password.empty() ? password : config_def::pgsql_password;
+        }
+        url.set_user_info("");
+        pgsql_replica.url = url.to_string();
     }
+    catch (NetHelpers::DnsException& ex) {
+        errors.push_back(std::format("validation error 'pgsql.endpoint={}': {}",
+            pgsql_replica.url, ex.what()));
+    }
+    catch (std::exception& ex) {
+        errors.push_back(std::format("validation error 'pgsql.endpoint={}': {}",
+            pgsql_replica.url, ex.what()));
+        pgsql_replica.url = config_def::pgsql_url;
+    }
+
+    if (pgsql_replica.login.empty())    pgsql_replica.login    = config_def::pgsql_login;
+    if (pgsql_replica.password.empty()) pgsql_replica.password = config_def::pgsql_password;
 
     try {
         if (grpc_url.find("://") == std::string::npos) {
@@ -332,32 +332,11 @@ Configuration::Configuration(std::shared_ptr<Logging::Logger> logger)
         }
     }
     {
-        const std::string key("PGSQL_REPLICA_1_URL");
+        const std::string key("PGSQL_REPLICA_URL");
         if (EnvironmentHelpers::has(key)) {
             auto env = EnvironmentHelpers::get(key);
             auto val = StringHelpers::trim(env.value());
-            pgsql_replica.push_back({});
-            pgsql_replica.back().url = val;
-            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
-        }
-    }
-    {
-        const std::string key("PGSQL_REPLICA_2_URL");
-        if (EnvironmentHelpers::has(key)) {
-            auto env = EnvironmentHelpers::get(key);
-            auto val = StringHelpers::trim(env.value());
-            pgsql_replica.push_back({});
-            pgsql_replica.back().url = val;
-            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
-        }
-    }
-    {
-        const std::string key("PGSQL_REPLICA_3_URL");
-        if (EnvironmentHelpers::has(key)) {
-            auto env = EnvironmentHelpers::get(key);
-            auto val = StringHelpers::trim(env.value());
-            pgsql_replica.push_back({});
-            pgsql_replica.back().url = val;
+            pgsql_replica.url = val;
             LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
         }
     }
@@ -452,14 +431,11 @@ void Configuration::show_configuration() const
     ss << "\n  pgsql_master.login="     << pgsql_master.login;
     ss << "\n  pgsql_master.password="  << pgsql_master.password;
 
-for (int i = 0; const auto& replica : pgsql_replica) {
-    ss << "\n  pgsql_replica." << i << ".url="       << std::quoted(replica.url);
-    // ss << "\n  pgsql_replica." << i << ".login="     << std::string(replica.login.size(), '*');
-    // ss << "\n  pgsql_replica." << i << ".password="  << std::string(replica.password.size(), '*');
-    ss << "\n  pgsql_replica." << i << ".login="     << replica.login;
-    ss << "\n  pgsql_replica." << i << ".password="  << replica.password;
-    ++i;
-}
+    ss << "\n  pgsql_replica.url="       << std::quoted(pgsql_replica.url);
+    // ss << "\n  pgsql_replica.login="     << std::string(pgsql_replica.login.size(), '*');
+    // ss << "\n  pgsql_replica.password="  << std::string(pgsql_replica.password.size(), '*');
+    ss << "\n  pgsql_replica.login="     << pgsql_replica.login;
+    ss << "\n  pgsql_replica.password="  << pgsql_replica.password;
 
     ss << "\n  grpc.url="               << std::quoted(grpc_url);
 

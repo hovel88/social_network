@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 set(SERVICE_TARGET          social_network)
-set(SERVICE_VERSION         6)
+set(SERVICE_VERSION         9)
 project(${SERVICE_TARGET}
     VERSION                 ${SERVICE_VERSION}
     LANGUAGES               CXX

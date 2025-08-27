@@ -188,15 +188,15 @@ void App::db_start()
                 url.get_path().substr(1));
             masters.push_back(std::make_pair(conn_str, tag));
         }
-        for (const auto& replica : configuration.pgsql_replica) {
-            UrlHelpers::Url url(replica.url);
+        {
+            UrlHelpers::Url url(configuration.pgsql_replica.url);
             std::string tag = std::format("{}:{}",
                 url.get_host(),
                 url.get_port());
             db_host_tags.insert(tag);
             std::string conn_str = std::format("user={} password={} host={} port={} dbname={} connect_timeout=60 application_name=social_network",
-                replica.login,
-                replica.password,
+                configuration.pgsql_replica.login,
+                configuration.pgsql_replica.password,
                 url.get_host(),
                 url.get_port(),
                 url.get_path().substr(1));

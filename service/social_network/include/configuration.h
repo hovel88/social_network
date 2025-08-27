@@ -56,8 +56,8 @@ namespace config_data {
             std::string password;
         };
 
-        pgsql_s              pgsql_master;
-        std::vector<pgsql_s> pgsql_replica;
+        pgsql_s pgsql_master;
+        pgsql_s pgsql_replica;
 
         std::string grpc_url;
 
