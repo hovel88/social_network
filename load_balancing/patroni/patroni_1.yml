@@ -61,6 +61,9 @@ bootstrap:
         max_worker_processes: 8
         max_locks_per_transaction: 64
         max_connections: 100
+        tcp_keepalives_idle: 60
+        tcp_keepalives_interval: 10
+        tcp_keepalives_count: 10
 
   pg_hba:
   - host replication replicator 192.168.1.1/24 md5
