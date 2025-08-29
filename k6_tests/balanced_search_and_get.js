@@ -22,23 +22,35 @@ export default function () {
   const query = search_queries[__VU % search_queries.length];
 
   // чтение /user/search
-  const search_res = http.get(`${host}/user/search?first_name=${query.first}&last_name=${query.second}`);
+  const search_url = `${host}/user/search?first_name=${query.first}&last_name=${query.second}`;
+  const search_params = {
+    timeout: '600s'
+  };
+  const search_res = http.get(search_url, search_params);
   check(search_res, {
     'search status 200': (r) => r.status === 200
   });
 
-  const resp_data = search_res.json()
-  if (Array.isArray(resp_data)) {
-    for (const item of resp_data) {
-      if (item.hasOwnProperty('id')) {
-        // чтение /user/get/{id}
-        const get_res = http.get(`${host}/user/get/${item.id}`);
-        check(get_res, {
-          'get status 200': (r) => r.status === 200
-        });
+  if (search_res.status === 200) {
+    const resp_data = search_res.json()
+    if (Array.isArray(resp_data)) {
+      for (const item of resp_data) {
+        if (item.hasOwnProperty('id')) {
+          // чтение /user/get/{id}
+          const get_url = `${host}/user/get/${item.id}`;
+          const get_params = {
+            timeout: '60s'
+          };
+          const get_res = http.get(get_url, get_params);
+          check(get_res, {
+            'get status 200': (r) => r.status === 200
+          });
+        }
       }
+    } else {
+      console.log('Response body is not a JSON array');
     }
   } else {
-    console.log('Response body is not a JSON array');
+    console.log('Response status is not 200');
   }
 }
