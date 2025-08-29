@@ -1,136 +1,214 @@
 #pragma once
 
 #include <tuple>
+#include <set>
 #include <utility>
 #include <queue>
-#include <set>
 #include <mutex>
 #include <memory>
-#include <vector>
+#include <format>
 #include <stdexcept>
 #include <pqxx/pqxx>
 #include "logger/logger.h"
+#include "helpers/url.h"
+#include "configuration.h"
 
 class ConnectionPool
 {
 public:
     enum class NodeType { MASTER, REPLICA };
 
-    using TypeNumTagConnection    = std::tuple<NodeType, size_t, std::string, std::shared_ptr<pqxx::connection>>; // <node_type, node_num, node_tag, conn>
-    using ConnectionStrCollection = std::vector<std::pair<std::string, std::string>>; // vector of <conn_str, node_tag>
-
-private:
-    struct node_s {
-        std::string                                   node_tag{};
-        std::string                                   conn_str{};
-        std::queue<std::shared_ptr<pqxx::connection>> conn_pool{};
-    };
-
-    std::mutex                              pool_mtx_{};
-    std::map<NodeType, std::vector<node_s>> pool_{}; // [node_type : vector of <node_s> ]
+    using TypedConnection = std::tuple<NodeType, std::shared_ptr<pqxx::connection>>; // <node_type, conn>
 
 public:
-    ConnectionPool(const ConnectionStrCollection& masters,
-                   const ConnectionStrCollection& replicas,
-                   size_t pool_size) {
-        pool_[NodeType::MASTER].clear();
-        pool_[NodeType::REPLICA].clear();
+    static ConnectionPool& instance()
+    {
+        static ConnectionPool instance;
+        return instance;
+    }
 
-        // соединение к master-node
-        for (const auto& master : masters) {
-            auto& entry = pool_[NodeType::MASTER].emplace_back();
-            entry.node_tag = master.second;
-            entry.conn_str = master.first;
-            for (size_t i = 0; i < pool_size; ++i) {
-                entry.conn_pool.emplace(std::make_shared<pqxx::connection>(entry.conn_str));
+    TypedConnection get_master_connection()
+    {
+        if (master_conn_str_.empty()) {
+            throw std::runtime_error("no available master connections");
+        }
+        std::lock_guard<std::mutex> lock(master_mtx_);
+
+        // сначала поищем подходящее соединение в пуле
+        while (!master_connections_.empty()) {
+            auto conn = std::move(master_connections_.front());
+            if (conn->is_open()) {
+                // соединение, которое до сих пор активно. используем его
+                master_connections_.pop();
+                return std::make_tuple(NodeType::MASTER, std::move(conn));
+            } else {
+                // в пуле соединение есть, но оно уже не активно. подчистим
+                master_connections_.pop();
             }
         }
+        // если мы здесь, значит открытых соединений в пуле не нашлось
+        try {
+            auto conn = std::make_shared<pqxx::connection>(master_conn_str_);
+            return std::make_tuple(NodeType::MASTER, std::move(conn));
+        } catch (std::exception& ex) {
+            throw std::runtime_error(std::format("failed to create master connection (tag='{}'): {}", master_conn_tag_, ex.what()));
+        }
+    }
 
-        // соединения к replica-node
-        for (const auto& replica : replicas) {
-            auto& entry = pool_[NodeType::REPLICA].emplace_back();
-            entry.node_tag = replica.second;
-            entry.conn_str = replica.first;
-            for (size_t i = 0; i < pool_size; ++i) {
-                entry.conn_pool.emplace(std::make_shared<pqxx::connection>(entry.conn_str));
+    TypedConnection get_replica_connection()
+    {
+        if (replica_conn_str_.empty()
+        &&  master_conn_str_.empty()) {
+            throw std::runtime_error("no available replica connections");
+        }
+        if (!replica_conn_str_.empty()) {
+            std::lock_guard<std::mutex> lock(replica_mtx_);
+
+            // сначала поищем подходящее соединение в пуле
+            while (!replica_connections_.empty()) {
+                auto conn = std::move(replica_connections_.front());
+                if (conn->is_open()) {
+                    // соединение, которое до сих пор активно. используем его
+                    replica_connections_.pop();
+                    return std::make_tuple(NodeType::REPLICA, std::move(conn));
+                } else {
+                    // в пуле соединение есть, но оно уже не активно. подчистим
+                    replica_connections_.pop();
+                }
+            }
+            // если мы здесь, значит открытых соединений в пуле не нашлось
+            try {
+                auto conn = std::make_shared<pqxx::connection>(replica_conn_str_);
+                return std::make_tuple(NodeType::REPLICA, std::move(conn));
+            } catch (std::exception& ex) {
+                throw std::runtime_error(std::format("failed to create replica connection (tag='{}'): {}", replica_conn_tag_, ex.what()));
+            }
+        }
+        // предпочитаемое соединение - соединение с репликой,
+        // но в настройках не было задано URL до реплики,
+        // поэтому попытаемся взять соединение до мастера
+        return get_master_connection();
+    }
+
+    void release_connection(const NodeType& node_type, std::shared_ptr<pqxx::connection> conn)
+    {
+        if (node_type == NodeType::MASTER) {
+            std::lock_guard<std::mutex> lock(master_mtx_);
+            master_connections_.push(std::move(conn));
+            while (master_connections_.size() > max_connections_per_type_) {
+                master_connections_.pop();
+            }
+        }
+        if (node_type == NodeType::REPLICA) {
+            std::lock_guard<std::mutex> lock(replica_mtx_);
+            replica_connections_.push(std::move(conn));
+            while (replica_connections_.size() > max_connections_per_type_) {
+                replica_connections_.pop();
             }
         }
     }
 
-    TypeNumTagConnection get_connection(NodeType preferred) {
-        std::lock_guard<std::mutex> lock(pool_mtx_);
-
-        if (!pool_[NodeType::REPLICA].empty()
-        &&  preferred == NodeType::REPLICA) {
-            // Round Robin
-            static size_t last_used_replica_num = 0;
-            last_used_replica_num = (last_used_replica_num + 1) % pool_[NodeType::REPLICA].size();
-
-            auto& entry = pool_[NodeType::REPLICA][last_used_replica_num];
-            if (!entry.conn_pool.empty()) {
-                auto conn = std::move(entry.conn_pool.front());
-                entry.conn_pool.pop();
-                return std::make_tuple(NodeType::REPLICA, last_used_replica_num, entry.node_tag, std::move(conn));
-            }
-
-            throw std::runtime_error("No connections available");
-        }
-
-        if (!pool_[NodeType::MASTER].empty()) {
-            // Round Robin
-            static size_t last_used_master_num = 0;
-            last_used_master_num = (last_used_master_num + 1) % pool_[NodeType::MASTER].size();
-
-            auto& entry = pool_[NodeType::MASTER][last_used_master_num];
-            if (!entry.conn_pool.empty()) {
-                auto conn = std::move(entry.conn_pool.front());
-                entry.conn_pool.pop();
-                return std::make_tuple(NodeType::MASTER, last_used_master_num, entry.node_tag, std::move(conn));
-            }
-
-            throw std::runtime_error("No connections available");
-        }
-
-        // случай, когда у нас вообще ничего не настроено
-        throw std::runtime_error("No connections available");
+    std::set<std::string> get_host_tags() const
+    {
+        std::set<std::string> tags;
+        tags.insert(master_conn_tag_);
+        tags.insert(replica_conn_tag_);
+        return tags;
     }
 
-    void release_connection(TypeNumTagConnection& tntc) {
-        std::lock_guard<std::mutex> lock(pool_mtx_);
-
-        NodeType node_type;
-        size_t   node_num;
-        std::shared_ptr<pqxx::connection> conn;
-        node_type = std::get<0>(tntc);
-        node_num  = std::get<1>(tntc);
-        conn      = std::move(std::get<3>(tntc));
-        if (pool_.count(node_type)) {
-            if (pool_[node_type].size() > node_num) {
-                pool_[node_type][node_num].conn_pool.push(std::move(conn));
-            }
+private:
+    ~ConnectionPool()
+    {
+        while (!master_connections_.empty()) {
+            master_connections_.pop();
+        }
+        while (!replica_connections_.empty()) {
+            replica_connections_.pop();
         }
     }
+    ConnectionPool()
+    {
+        const Configuration& configuration = Configuration::instance();
+        max_connections_per_type_ = configuration.http_threads_count;
+        {
+            UrlHelpers::Url url(configuration.pgsql_master.url);
+            master_conn_tag_ = std::format("{}:{}", url.get_host(), url.get_port());
+            master_conn_str_ = std::format("user={} password={} host={} port={} dbname={} application_name=social_network connect_timeout=60 keepalives=1 keepalives_idle=60 keepalives_interval=10 keepalives_count=10",
+                configuration.pgsql_master.login,
+                configuration.pgsql_master.password,
+                url.get_host(),
+                url.get_port(),
+                url.get_path().substr(1));
+        }
+        {
+            UrlHelpers::Url url(configuration.pgsql_replica.url);
+            replica_conn_tag_ = std::format("{}:{}", url.get_host(), url.get_port());
+            replica_conn_str_ = std::format("user={} password={} host={} port={} dbname={} application_name=social_network connect_timeout=60 keepalives=1 keepalives_idle=60 keepalives_interval=10 keepalives_count=10",
+                configuration.pgsql_replica.login,
+                configuration.pgsql_replica.password,
+                url.get_host(),
+                url.get_port(),
+                url.get_path().substr(1));
+        }
+    }
+
+private:
+    size_t max_connections_per_type_{0};
+
+    std::string master_conn_tag_{};
+    std::string replica_conn_tag_{};
+
+    std::string master_conn_str_{};
+    std::string replica_conn_str_{};
+
+    std::mutex                                    master_mtx_{};
+    std::queue<std::shared_ptr<pqxx::connection>> master_connections_{};
+
+    std::mutex                                    replica_mtx_{};
+    std::queue<std::shared_ptr<pqxx::connection>> replica_connections_{};
 };
 
-struct ScopedConnection
+class ScopedConnection
 {
-    std::shared_ptr<ConnectionPool>   pool{nullptr};
-    std::shared_ptr<pqxx::connection> conn{nullptr};
-    ConnectionPool::NodeType          node_type{ConnectionPool::NodeType::MASTER};
-    size_t                            node_num{};
-    std::string                       node_tag{};
+public:
+    ~ScopedConnection()
+    {
+        auto& pool = ConnectionPool::instance();
+        pool.release_connection(node_type_, std::move(conn_));
+    }
+    ScopedConnection(ConnectionPool::NodeType t = ConnectionPool::NodeType::REPLICA)
+    {
+        auto& pool = ConnectionPool::instance();
+        try {
+            auto tc    = (t == ConnectionPool::NodeType::MASTER) ? pool.get_master_connection() : pool.get_replica_connection();
+            node_type_ = std::get<0>(tc);
+            conn_      = std::move(std::get<1>(tc));
+        } catch (std::exception& ex) {
+            throw std::runtime_error(std::format("failed to get connection: {}", std::string(ex.what())));
+        }
+    }
+    ScopedConnection(const ScopedConnection&) = delete;
+    ScopedConnection(ScopedConnection&&) = delete;
+    ScopedConnection& operator=(const ScopedConnection&) = delete;
+    ScopedConnection& operator=(ScopedConnection&&) = delete;
 
-    ~ScopedConnection() {
-        auto tntc = std::make_tuple(node_type, node_num, node_tag, std::move(conn));
-        pool->release_connection(tntc);
+    pqxx::connection& get()
+    {
+        if (conn_) return *conn_;
+        throw std::runtime_error("connection is not initialized");
     }
-    ScopedConnection(std::shared_ptr<ConnectionPool>& p,
-                     ConnectionPool::NodeType t = ConnectionPool::NodeType::REPLICA)
-    :   pool(p) {
-        auto tntc = pool->get_connection(t);
-        node_type = std::get<0>(tntc);
-        node_num  = std::get<1>(tntc);
-        node_tag  = std::get<2>(tntc);
-        conn      = std::move(std::get<3>(tntc));
+    std::string node_tag()
+    {
+        if (conn_) return std::format("{}:{}", conn_->hostname(), conn_->port());
+        return std::string("<?>");
     }
+    std::string to_string()
+    {
+        if (conn_) return std::format("query to {} tag='{}'", (node_type_ == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), node_tag());
+        return std::string("<?>");
+    }
+
+private:
+    std::shared_ptr<pqxx::connection> conn_{nullptr};
+    ConnectionPool::NodeType          node_type_{ConnectionPool::NodeType::MASTER};
 };

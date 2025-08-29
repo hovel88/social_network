@@ -52,10 +52,6 @@ private:
     std::unique_ptr<prometheus::Exposer> exposer_{nullptr};
     std::shared_ptr<Metrics>             metrics_{nullptr};
 
-    std::shared_ptr<ConnectionPool>      db_pool_{nullptr};
-    std::set<std::string>                db_host_tags{};
-
-    void db_start();
     void http_start();
 
     void on_liveness_check(const OnLivenessCheckFunc& cb) { return on_liveness_check(OnLivenessCheckFunc(cb)); }

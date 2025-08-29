@@ -105,15 +105,14 @@ void App::run()
     LOGGER_INFOR(std::format("running..."));
 
     try {
-        db_start();
-
         const Configuration& configuration = Configuration::instance();
         configuration.show_configuration();
 
         {
+            const ConnectionPool& pool = ConnectionPool::instance();
             // регистрируем сервер для Prometheus-метрик
             exposer_ = std::make_unique<prometheus::Exposer>(configuration.prometheus_listening);
-            metrics_ = std::make_shared<Metrics>(db_host_tags);
+            metrics_ = std::make_shared<Metrics>(pool.get_host_tags());
             exposer_->RegisterCollectable(metrics_->registry());
         }
         {
@@ -128,7 +127,7 @@ void App::run()
 
         // создаем сервисы
         service_cache_       = std::make_shared<CacheService>(CACHE_CAPACITY, std::chrono::seconds(CACHE_TTL_SEC));
-        service_database_    = std::make_shared<DatabaseService>(metrics_, db_pool_);
+        service_database_    = std::make_shared<DatabaseService>(metrics_);
         service_auth_        = std::make_shared<AuthService>(metrics_, service_database_);
         service_user_http_   = std::make_unique<HttpUserService>(metrics_, service_database_);
         service_friend_http_ = std::make_unique<HttpFriendService>(metrics_, service_database_, service_cache_);
@@ -158,57 +157,6 @@ void App::run()
     catch (std::exception& ex) {
         LOGGER_ERROR(std::format("App::run() exception: {}",
             ex.what()));
-    }
-}
-
-void App::db_start()
-{
-    static bool db_client_started = false;
-
-    if (db_client_started) return;
-
-    try {
-        ConnectionPool::ConnectionStrCollection masters;
-        ConnectionPool::ConnectionStrCollection replicas;
-        // https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
-
-        const Configuration& configuration = Configuration::instance();
-
-        {
-            UrlHelpers::Url url(configuration.pgsql_master.url);
-            std::string tag = std::format("{}:{}",
-                url.get_host(),
-                url.get_port());
-            db_host_tags.insert(tag);
-            std::string conn_str = std::format("user={} password={} host={} port={} dbname={} connect_timeout=60 application_name=social_network",
-                configuration.pgsql_master.login,
-                configuration.pgsql_master.password,
-                url.get_host(),
-                url.get_port(),
-                url.get_path().substr(1));
-            masters.push_back(std::make_pair(conn_str, tag));
-        }
-        {
-            UrlHelpers::Url url(configuration.pgsql_replica.url);
-            std::string tag = std::format("{}:{}",
-                url.get_host(),
-                url.get_port());
-            db_host_tags.insert(tag);
-            std::string conn_str = std::format("user={} password={} host={} port={} dbname={} connect_timeout=60 application_name=social_network",
-                configuration.pgsql_replica.login,
-                configuration.pgsql_replica.password,
-                url.get_host(),
-                url.get_port(),
-                url.get_path().substr(1));
-            replicas.push_back(std::make_pair(conn_str, tag));
-        }
-
-        db_pool_ = std::make_shared<ConnectionPool>(masters, replicas, configuration.http_threads_count);
-        if (db_pool_) {
-            db_client_started = true;
-        }
-    } catch (std::exception& ex) {
-        LOGGER_ERROR(std::format("db_start exception: {}", ex.what()));
     }
 }
 

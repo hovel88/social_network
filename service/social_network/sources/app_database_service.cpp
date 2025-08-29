@@ -1,6 +1,7 @@
 #include <format>
 #include <bcrypt/BCrypt.hpp>
 #include "app_database_service.h"
+#include "app_connection_pool.h"
 
 DatabaseService::auth_rv DatabaseService::authenticate_user(const std::string& user_id)
 {
@@ -10,25 +11,19 @@ DatabaseService::auth_rv DatabaseService::authenticate_user(const std::string& u
         " WHERE id = $1";
 
     auth_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("authenticate_user: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("authenticate_user: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{user_id});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{user_id});
+        tx.commit();
 
-            rv.error_str.clear();
-            rv.authenticated = !result.empty();
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
-            rv.authenticated = false;
-        }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+        rv.error_str.clear();
+        rv.authenticated = !result.empty();
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
         rv.authenticated = false;
     }
     return rv;
@@ -42,34 +37,29 @@ DatabaseService::login_rv DatabaseService::login_user(const std::string& user_id
         " WHERE id = $1";
 
     login_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("login_user: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::REPLICA);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("login_user: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{user_id});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{user_id});
+        tx.commit();
 
-            rv.error_str.clear();
-            rv.token.clear();
+        rv.error_str.clear();
+        rv.token.clear();
 
-            for (const auto& row : result) {
-                const auto& [row_id, row_pwd_hash] = row.as<std::string, std::string>();
-                if (!BCrypt::validatePassword(user_pwd, row_pwd_hash)) {
-                    rv.error_str = std::format("login_user: request param 'password' is not match");
-                } else {
-                    rv.token = row_id;
-                }
-                break;
+        for (const auto& row : result) {
+            const auto& [row_id, row_pwd_hash] = row.as<std::string, std::string>();
+            if (!BCrypt::validatePassword(user_pwd, row_pwd_hash)) {
+                rv.error_str = std::format("login_user: request param 'password' is not match");
+            } else {
+                rv.token = row_id;
             }
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+            break;
         }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -82,38 +72,33 @@ DatabaseService::user_rv DatabaseService::register_user(const std::string& fname
         "  RETURNING id";
 
     user_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("register_user: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("register_user: {}", scoped_conn.to_string()));
 
-            const std::string hashed_pwd = BCrypt::generateHash(pwd, 12);
+        const std::string hashed_pwd = BCrypt::generateHash(pwd, 12);
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{fname, sname, bdate, bio, city, hashed_pwd});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{fname, sname, bdate, bio, city, hashed_pwd});
+        tx.commit();
 
-            rv.error_str.clear();
-            rv.user = std::nullopt;
+        rv.error_str.clear();
+        rv.user = std::nullopt;
 
-            for (const auto& row : result) {
-                const auto& [row_id] = row.as<std::string>();
-                rv.user = User{};
-                rv.user->id             = row_id;
-                rv.user->first_name     = fname;
-                rv.user->second_name    = sname;
-                rv.user->birthdate      = bdate;
-                rv.user->biography      = bio;
-                rv.user->city           = city;
-                break;
-            }
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        for (const auto& row : result) {
+            const auto& [row_id] = row.as<std::string>();
+            rv.user = User{};
+            rv.user->id             = row_id;
+            rv.user->first_name     = fname;
+            rv.user->second_name    = sname;
+            rv.user->birthdate      = bdate;
+            rv.user->biography      = bio;
+            rv.user->city           = city;
+            break;
         }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -126,36 +111,31 @@ DatabaseService::user_rv DatabaseService::get_user(const std::string& user_id)
         " WHERE id = $1";
 
     user_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("get_user: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::REPLICA);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("get_user: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{user_id});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{user_id});
+        tx.commit();
 
-            rv.error_str.clear();
-            rv.user = std::nullopt;
+        rv.error_str.clear();
+        rv.user = std::nullopt;
 
-            for (const auto& row : result) {
-                const auto& [row_fname, row_sname, row_bdate, row_bio, row_city] = row.as<std::string, std::string, std::string, std::string, std::string>();
-                rv.user = User{};
-                rv.user->id             = user_id;
-                rv.user->first_name     = row_fname;
-                rv.user->second_name    = row_sname;
-                rv.user->birthdate      = row_bdate;
-                rv.user->biography      = row_bio;
-                rv.user->city           = row_city;
-                break;
-            }
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        for (const auto& row : result) {
+            const auto& [row_fname, row_sname, row_bdate, row_bio, row_city] = row.as<std::string, std::string, std::string, std::string, std::string>();
+            rv.user = User{};
+            rv.user->id             = user_id;
+            rv.user->first_name     = row_fname;
+            rv.user->second_name    = row_sname;
+            rv.user->birthdate      = row_bdate;
+            rv.user->biography      = row_bio;
+            rv.user->city           = row_city;
+            break;
         }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -170,35 +150,30 @@ DatabaseService::users_rv DatabaseService::search_user(const std::string& fname,
         " LIMIT 250";
 
     users_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("search_user: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::REPLICA);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("search_user: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{fname, sname});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{fname, sname});
+        tx.commit();
 
-            rv.error_str.clear();
-            rv.users.clear();
+        rv.error_str.clear();
+        rv.users.clear();
 
-            for (const auto& row : result) {
-                const auto& [row_id, row_fname, row_sname, row_bdate, row_bio, row_city] = row.as<std::string, std::string, std::string, std::string, std::string, std::string>();
-                auto& u = rv.users.emplace_back(User());
-                u.id            = row_id;
-                u.first_name    = row_fname;
-                u.second_name   = row_sname;
-                u.birthdate     = row_bdate;
-                u.biography     = row_bio;
-                u.city          = row_city;
-            }
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        for (const auto& row : result) {
+            const auto& [row_id, row_fname, row_sname, row_bdate, row_bio, row_city] = row.as<std::string, std::string, std::string, std::string, std::string, std::string>();
+            auto& u = rv.users.emplace_back(User());
+            u.id            = row_id;
+            u.first_name    = row_fname;
+            u.second_name   = row_sname;
+            u.birthdate     = row_bdate;
+            u.biography     = row_bio;
+            u.city          = row_city;
         }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -211,25 +186,20 @@ DatabaseService::common_rv DatabaseService::add_friend(const std::string& user_i
         "ON CONFLICT (user_id, friend_id) DO NOTHING";
 
     common_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("add_friend: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("add_friend: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            // отношения дружбы в обе стороны
-            tx.exec(query, pqxx::params{user_id, friend_id});
-            tx.exec(query, pqxx::params{friend_id, user_id});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        // отношения дружбы в обе стороны
+        tx.exec(query, pqxx::params{user_id, friend_id});
+        tx.exec(query, pqxx::params{friend_id, user_id});
+        tx.commit();
 
-            rv.error_str.clear();
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
-        }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+        rv.error_str.clear();
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -241,25 +211,20 @@ DatabaseService::common_rv DatabaseService::delete_friend(const std::string& use
         " WHERE user_id = $1 AND friend_id = $2";
 
     common_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("delete_friend: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("delete_friend: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            // отношения дружбы в обе стороны
-            tx.exec(query, pqxx::params{user_id, friend_id});
-            tx.exec(query, pqxx::params{friend_id, user_id});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        // отношения дружбы в обе стороны
+        tx.exec(query, pqxx::params{user_id, friend_id});
+        tx.exec(query, pqxx::params{friend_id, user_id});
+        tx.commit();
 
-            rv.error_str.clear();
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
-        }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+        rv.error_str.clear();
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -272,32 +237,27 @@ DatabaseService::friends_rv DatabaseService::get_friends(const std::string& user
         " WHERE user_id = $1";
 
     friends_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("get_friends: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::REPLICA);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("get_friends: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{user_id});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{user_id});
+        tx.commit();
 
-            rv.error_str.clear();
-            rv.friend_ids.clear();
+        rv.error_str.clear();
+        rv.friend_ids.clear();
 
-            if (!result.empty()) {
-                rv.friend_ids.reserve(result.size());
-            }
-            for (const auto& row : result) {
-                const auto& [row_friend_id] = row.as<std::string>();
-                rv.friend_ids.push_back(row_friend_id);
-            }
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        if (!result.empty()) {
+            rv.friend_ids.reserve(result.size());
         }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+        for (const auto& row : result) {
+            const auto& [row_friend_id] = row.as<std::string>();
+            rv.friend_ids.push_back(row_friend_id);
+        }
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -309,34 +269,29 @@ DatabaseService::post_rv DatabaseService::create_post(const std::string& content
         "RETURNING id, (EXTRACT(EPOCH FROM created_at) * 1000)::bigint as created_at_ms";
 
     post_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("create_post: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("create_post: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{user_id, content});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{user_id, content});
+        tx.commit();
 
-            rv.error_str.clear();
-            rv.post = std::nullopt;
+        rv.error_str.clear();
+        rv.post = std::nullopt;
 
-            for (const auto& row : result) {
-                const auto& [row_id, row_created_at] = row.as<std::string, uint64_t>();
-                rv.post = Post{};
-                rv.post->id              = row_id;
-                rv.post->author_user_id  = user_id;
-                rv.post->text            = content;
-                rv.post->created_at_msec = row_created_at;
-                break;
-            }
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        for (const auto& row : result) {
+            const auto& [row_id, row_created_at] = row.as<std::string, uint64_t>();
+            rv.post = Post{};
+            rv.post->id              = row_id;
+            rv.post->author_user_id  = user_id;
+            rv.post->text            = content;
+            rv.post->created_at_msec = row_created_at;
+            break;
         }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -349,27 +304,22 @@ DatabaseService::common_rv DatabaseService::update_post(const std::string& post_
         "RETURNING 1";
 
     common_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("update_post: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("update_post: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{content, post_id, user_id});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{content, post_id, user_id});
+        tx.commit();
 
-            rv.error_str.clear();
+        rv.error_str.clear();
 
-            if (result.empty()) {
-                rv.error_str = std::format("update_post: invalid post id or user is not an author");
-            }
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        if (result.empty()) {
+            rv.error_str = std::format("update_post: invalid post id or user is not an author");
         }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -382,27 +332,22 @@ DatabaseService::common_rv DatabaseService::delete_post(const std::string& post_
         "RETURNING 1";
 
     common_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("delete_post: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("delete_post: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{post_id, user_id});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{post_id, user_id});
+        tx.commit();
 
-            rv.error_str.clear();
+        rv.error_str.clear();
 
-            if (result.empty()) {
-                rv.error_str = std::format("delete_post: invalid post id or user is not an author");
-            }
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        if (result.empty()) {
+            rv.error_str = std::format("delete_post: invalid post id or user is not an author");
         }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -415,34 +360,29 @@ DatabaseService::post_rv DatabaseService::get_post(const std::string& post_id)
         " WHERE id = $1 AND deleted_at IS NULL";
 
     post_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("get_post: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::REPLICA);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("get_post: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{post_id});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{post_id});
+        tx.commit();
 
-            rv.error_str.clear();
-            rv.post = std::nullopt;
+        rv.error_str.clear();
+        rv.post = std::nullopt;
 
-            for (const auto& row : result) {
-                const auto& [row_user_id, row_content, row_created_at] = row.as<std::string, std::string, uint64_t>();
-                rv.post = Post{};
-                rv.post->id              = post_id;
-                rv.post->author_user_id  = row_user_id;
-                rv.post->text            = row_content;
-                rv.post->created_at_msec = row_created_at;
-                break;
-            }
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        for (const auto& row : result) {
+            const auto& [row_user_id, row_content, row_created_at] = row.as<std::string, std::string, uint64_t>();
+            rv.post = Post{};
+            rv.post->id              = post_id;
+            rv.post->author_user_id  = row_user_id;
+            rv.post->text            = row_content;
+            rv.post->created_at_msec = row_created_at;
+            break;
         }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -458,33 +398,28 @@ DatabaseService::posts_rv DatabaseService::feed_post(const std::string& user_id,
         " LIMIT $2";
 
     posts_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("feed_post: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::REPLICA);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("feed_post: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{user_id, std::to_string(limit)});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{user_id, std::to_string(limit)});
+        tx.commit();
 
-            rv.error_str.clear();
-            rv.posts.clear();
+        rv.error_str.clear();
+        rv.posts.clear();
 
-            for (const auto& row : result) {
-                const auto& [row_id, row_user_id, row_content, row_created_at] = row.as<std::string, std::string, std::string, uint64_t>();
-                auto& p = rv.posts.emplace_back(Post());
-                p.id              = row_id;
-                p.author_user_id  = row_user_id;
-                p.text            = row_content;
-                p.created_at_msec = row_created_at;
-            }
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        for (const auto& row : result) {
+            const auto& [row_id, row_user_id, row_content, row_created_at] = row.as<std::string, std::string, std::string, uint64_t>();
+            auto& p = rv.posts.emplace_back(Post());
+            p.id              = row_id;
+            p.author_user_id  = row_user_id;
+            p.text            = row_content;
+            p.created_at_msec = row_created_at;
         }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -496,23 +431,18 @@ DatabaseService::common_rv DatabaseService::send_dialog_message(const std::strin
         "VALUES ($1, $2, $3, $4)";
 
     common_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::MASTER);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("send_dialog_message: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("send_dialog_message: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            tx.exec(query, pqxx::params{from_id, to_id, message, calculate_dialog_shard_key(from_id, to_id)});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        tx.exec(query, pqxx::params{from_id, to_id, message, calculate_dialog_shard_key(from_id, to_id)});
+        tx.commit();
 
-            rv.error_str.clear();
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
-        }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+        rv.error_str.clear();
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }
@@ -528,33 +458,28 @@ DatabaseService::dialog_rv DatabaseService::list_dialog_messages(const std::stri
         " LIMIT $5";
 
     dialog_rv rv{};
-    if (db_pool_) {
-        try {
-            ScopedConnection scoped_conn(db_pool_, ConnectionPool::NodeType::REPLICA);
-            metrics_->count_request_to_host(scoped_conn.node_tag);
-            LOGGER_TRACE(std::format("list_dialog_messages: query to {} #{} tag='{}'",
-                (scoped_conn.node_type == ConnectionPool::NodeType::MASTER ? "MASTER" : "REPLICA"), scoped_conn.node_num, scoped_conn.node_tag));
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::REPLICA);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("list_dialog_messages: {}", scoped_conn.to_string()));
 
-            pqxx::work tx(*scoped_conn.conn.get());
-            pqxx::result result = tx.exec(query, pqxx::params{calculate_dialog_shard_key(from_id, to_id), calculate_dialog_shard_key(to_id, from_id), from_id, to_id, std::to_string(limit)});
-            tx.commit();
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{calculate_dialog_shard_key(from_id, to_id), calculate_dialog_shard_key(to_id, from_id), from_id, to_id, std::to_string(limit)});
+        tx.commit();
 
-            rv.error_str.clear();
-            rv.messages.clear();
+        rv.error_str.clear();
+        rv.messages.clear();
 
-            for (const auto& row : result) {
-                const auto& [row_from_id, row_to_id, row_message, row_created_at] = row.as<std::string, std::string, std::string, uint64_t>();
-                auto& p = rv.messages.emplace_back(Message());
-                p.from            = row_from_id;
-                p.to              = row_to_id;
-                p.text            = row_message;
-                p.created_at_msec = row_created_at;
-            }
-        } catch (std::exception& ex) {
-            rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+        for (const auto& row : result) {
+            const auto& [row_from_id, row_to_id, row_message, row_created_at] = row.as<std::string, std::string, std::string, uint64_t>();
+            auto& p = rv.messages.emplace_back(Message());
+            p.from            = row_from_id;
+            p.to              = row_to_id;
+            p.text            = row_message;
+            p.created_at_msec = row_created_at;
         }
-    } else {
-        rv.error_str = std::format("server error: there is no connection to DB (query: {})", query);
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
     }
     return rv;
 }

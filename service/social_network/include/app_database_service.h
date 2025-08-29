@@ -3,7 +3,6 @@
 #include <optional>
 #include <vector>
 #include "app_metrics.h"
-#include "app_connection_pool.h"
 #include "configuration.h"
 
 class DatabaseService
@@ -74,11 +73,9 @@ public:
     DatabaseService& operator=(const DatabaseService&) = delete;
     DatabaseService& operator=(DatabaseService&&) = delete;
 
-    explicit DatabaseService(std::shared_ptr<Metrics> metrics,
-                             std::shared_ptr<ConnectionPool> db_pool)
+    explicit DatabaseService(std::shared_ptr<Metrics> metrics)
     :   logger_(Configuration::instance().get_logger()),
-        metrics_(std::move(metrics)),
-        db_pool_(std::move(db_pool)) {}
+        metrics_(std::move(metrics)) {}
 
     auth_rv authenticate_user(const std::string& user_id);
     login_rv login_user(const std::string& user_id, const std::string& user_pwd);
@@ -102,7 +99,6 @@ public:
 private:
     std::shared_ptr<Logging::Logger> logger_{nullptr};
     std::shared_ptr<Metrics>         metrics_{nullptr};
-    std::shared_ptr<ConnectionPool>  db_pool_{nullptr};
 
     static std::string calculate_dialog_shard_key(const std::string& from_id, const std::string& to_id);
 };
