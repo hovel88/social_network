@@ -14,21 +14,24 @@ public:
         registry_(std::make_shared<prometheus::Registry>()) {
 
         auto& total_c = prometheus::BuildCounter()
-            .Name("http_requests_total")
+            // .Name("http_requests_total")
+            .Name("chat_requests_total")
             .Help("HTTP total requests counter")
             .Register(*registry_);
         total_requests_dialog_send_      = &total_c.Add({{"endpoint", "/dialog/:id/send"}});
         total_requests_dialog_list_      = &total_c.Add({{"endpoint", "/dialog/:id/list"}});
 
         auto& failed_c = prometheus::BuildCounter()
-            .Name("http_requests_failed_total")
+            // .Name("http_requests_failed_total")
+            .Name("chat_requests_failed_total")
             .Help("HTTP failed requests counter")
             .Register(*registry_);
         failed_requests_dialog_send_      = &failed_c.Add({{"endpoint", "/dialog/:id/send"}});
         failed_requests_dialog_list_      = &failed_c.Add({{"endpoint", "/dialog/:id/list"}});
 
         auto& latency_h = prometheus::BuildHistogram()
-            .Name("http_request_duration_seconds")
+            // .Name("http_request_duration_seconds")
+            .Name("chat_requests_duration_seconds")
             .Help("HTTP request latency")
             .Register(*registry_);
         latency_requests_dialog_send_      = &latency_h.Add({{"endpoint", "/dialog/:id/send"}}, latency_buckets_);

@@ -2,7 +2,7 @@
 set -eux
 
 BUILDER_IMAGE_NAME=alpine-cpp-builder
-BUILDER_IMAGE_VERSION=1
+BUILDER_IMAGE_VERSION=2
 BUILDER_SHELL=/bin/sh
 BIND_SERVICE_SRC_DIR=$(pwd)/service
 BIND_SERVICE_BUILD_DIR=$(pwd)/service/_build

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 set(SERVICE_TARGET          chat_service)
-set(SERVICE_VERSION         1)
+set(SERVICE_VERSION         2)
 project(${SERVICE_TARGET}
     VERSION                 ${SERVICE_VERSION}
     LANGUAGES               CXX
