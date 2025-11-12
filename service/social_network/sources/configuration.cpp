@@ -26,6 +26,7 @@ const std::string config_data::config_def::pgsql_login{"postgres"};
 const std::string config_data::config_def::pgsql_password{""};
 const uint16_t    config_data::config_def::pgsql_port = 5432;
 
+const std::string config_data::config_def::grpc_listening{"0.0.0.0:50051"};
 const std::string config_data::config_def::grpc_url{"grpc://localhost:50051"};
 const uint16_t    config_data::config_def::grpc_port = 50051;
 
@@ -59,7 +60,8 @@ void config_data::config_s::clear()
     pgsql_replica.login.clear();
     pgsql_replica.password.clear();
 
-    grpc_url = config_def::grpc_url;
+    grpc_listening = config_def::grpc_listening;
+    grpc_url       = config_def::grpc_url;
 
     kafka_url = config_def::kafka_url;
 
@@ -190,6 +192,22 @@ std::list<std::string> config_data::config_s::validate()
 
     if (pgsql_replica.login.empty())    pgsql_replica.login    = config_def::pgsql_login;
     if (pgsql_replica.password.empty()) pgsql_replica.password = config_def::pgsql_password;
+
+    try {
+        NetHelpers::SocketAddress sock_addr(grpc_listening);
+        if (sock_addr.port() == 0) {
+            grpc_listening = std::format("{}:{}", sock_addr.host().to_string(), config_def::grpc_port);
+        }
+    }
+    catch (NetHelpers::DnsException& ex) {
+        errors.push_back(std::format("validation error 'grpc.listening={}': {}",
+            grpc_listening, ex.what()));
+    }
+    catch (std::exception& ex) {
+        errors.push_back(std::format("validation error 'grpc.listening={}': {}",
+            grpc_listening, ex.what()));
+        grpc_listening.assign(config_def::grpc_listening);
+    }
 
     try {
         if (grpc_url.find("://") == std::string::npos) {
@@ -342,6 +360,16 @@ Configuration::Configuration(std::shared_ptr<Logging::Logger> logger)
     }
 
     {
+        const std::string key("GRPC_LISTENING");
+        if (EnvironmentHelpers::has(key)) {
+            auto env = EnvironmentHelpers::get(key);
+            auto val = StringHelpers::trim(env.value());
+            grpc_listening = val;
+            LOGGER_DEBUG(std::format("configuration parameter was replaced by environment variable '{}'", key));
+        }
+    }
+
+    {
         const std::string key("GRPC_URL");
         if (EnvironmentHelpers::has(key)) {
             auto env = EnvironmentHelpers::get(key);
@@ -437,6 +465,7 @@ void Configuration::show_configuration() const
     ss << "\n  pgsql_replica.login="     << pgsql_replica.login;
     ss << "\n  pgsql_replica.password="  << pgsql_replica.password;
 
+    ss << "\n  grpc.listening="         << std::quoted(grpc_listening);
     ss << "\n  grpc.url="               << std::quoted(grpc_url);
 
     ss << "\n  kafka.url="              << std::quoted(kafka_url);

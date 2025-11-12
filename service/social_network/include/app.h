@@ -9,6 +9,7 @@
 #include "http_friend_service.h"
 #include "http_post_service.h"
 #include "http_dialog_service.h"
+#include "grpc_likes_service.h"
 
 using OnLivenessCheckFunc  = std::function<bool(void)>;
 using OnReadinessCheckFunc = std::function<bool(void)>;
@@ -37,6 +38,9 @@ private:
     OnLivenessCheckFunc                       liveness_check_cb_{};
     OnReadinessCheckFunc                      readiness_check_cb_{};
 
+    std::unique_ptr<grpc::Server> grpc_server_{nullptr};
+    std::thread                   grpc_server_thread_{};
+
     std::shared_ptr<grpc::Channel> grpc_channel_{nullptr};
 
     std::shared_ptr<KafkaProducer> kafka_producer{nullptr};
@@ -48,11 +52,13 @@ private:
     std::unique_ptr<HttpFriendService> service_friend_http_{nullptr};
     std::unique_ptr<HttpPostService>   service_post_http_{nullptr};
     std::unique_ptr<HttpDialogService> service_dialog_http_{nullptr};
+    std::shared_ptr<GrpcLikesService>  service_likes_grpc_{nullptr};
 
     std::unique_ptr<prometheus::Exposer> exposer_{nullptr};
     std::shared_ptr<Metrics>             metrics_{nullptr};
 
     void http_start();
+    void grpc_start();
 
     void on_liveness_check(const OnLivenessCheckFunc& cb) { return on_liveness_check(OnLivenessCheckFunc(cb)); }
     void on_liveness_check(OnLivenessCheckFunc&& cb) { liveness_check_cb_ = std::move(cb); }

@@ -24,6 +24,7 @@ namespace config_data {
         extern const std::string pgsql_login;
         extern const std::string pgsql_password;
 
+        extern const std::string grpc_listening;
         extern const std::string grpc_url;
         extern const uint16_t    grpc_port;
 
@@ -59,6 +60,7 @@ namespace config_data {
         pgsql_s pgsql_master;
         pgsql_s pgsql_replica;
 
+        std::string grpc_listening;
         std::string grpc_url;
 
         std::string kafka_url;

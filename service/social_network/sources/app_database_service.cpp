@@ -352,6 +352,70 @@ DatabaseService::common_rv DatabaseService::delete_post(const std::string& post_
     return rv;
 }
 
+DatabaseService::likes_rv DatabaseService::inc_post_likes(const std::string& post_id)
+{
+    static const std::string query =
+        "UPDATE posts "
+        "   SET likes_count = likes_count + 1 "
+        " WHERE post_id = $1 "
+        "RETURNING likes_count";
+
+    likes_rv rv{};
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("inc_post_likes: {}", scoped_conn.to_string()));
+
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{post_id});
+        tx.commit();
+
+        rv.error_str.clear();
+        rv.likes = std::nullopt;
+
+        for (const auto& row : result) {
+            const auto& [row_likes] = row.as<int32_t>();
+            *rv.likes = row_likes;
+            break;
+        }
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+    }
+    return rv;
+}
+
+DatabaseService::likes_rv DatabaseService::dec_post_likes(const std::string& post_id)
+{
+    static const std::string query =
+        "UPDATE posts "
+        "   SET likes_count = GREATEST(likes_count - 1, 0) "
+        " WHERE post_id = $1 "
+        "RETURNING likes_count";
+
+    likes_rv rv{};
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("dec_post_likes: {}", scoped_conn.to_string()));
+
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{post_id});
+        tx.commit();
+
+        rv.error_str.clear();
+        rv.likes = std::nullopt;
+
+        for (const auto& row : result) {
+            const auto& [row_likes] = row.as<int32_t>();
+            *rv.likes = row_likes;
+            break;
+        }
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+    }
+    return rv;
+}
+
 DatabaseService::post_rv DatabaseService::get_post(const std::string& post_id)
 {
     static const std::string query =

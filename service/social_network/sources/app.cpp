@@ -93,6 +93,10 @@ App::~App()
     if (http_server_thread_.joinable()) {
         http_server_thread_.join();
     }
+    if (grpc_server_) grpc_server_->Shutdown();
+    if (grpc_server_thread_.joinable()) {
+        grpc_server_thread_.join();
+    }
 }
 
 App::App()
@@ -133,6 +137,7 @@ void App::run()
         service_friend_http_ = std::make_unique<HttpFriendService>(metrics_, service_database_, service_cache_);
         service_post_http_   = std::make_unique<HttpPostService>(metrics_, service_database_, service_cache_, kafka_producer);
         service_dialog_http_ = std::make_unique<HttpDialogService>(metrics_, grpc_channel_);
+        service_likes_grpc_  = std::make_unique<GrpcLikesService>(logger_, service_database_);
 
         on_liveness_check([this]()->bool {
             // liveness probe (работоспособность).
@@ -149,6 +154,7 @@ void App::run()
             return true;
         });
         http_start();
+        grpc_start();
 
         for (;;) {
             sleep(1);
@@ -328,5 +334,34 @@ void App::http_start()
     }
     catch (std::exception& ex) {
         LOGGER_ERROR(std::format("{} exception: {}", http_server_thread_name, ex.what()));
+    }
+}
+
+void App::grpc_start()
+{
+    static const std::string grpc_server_thread_name("GrpcSrv");
+
+    if (grpc_server_) return;
+
+    try {
+        grpc_server_thread_ = std::thread([this]()->void {
+            // ThreadHelpers::block_signals();
+            const Configuration& configuration = Configuration::instance();
+
+            NetHelpers::SocketAddress sock_addr(configuration.grpc_listening);
+            grpc::ServerBuilder builder;
+            builder.AddListeningPort(sock_addr.to_string(), grpc::InsecureServerCredentials()); // без SSL/TLS
+            builder.RegisterService(service_likes_grpc_.get());
+
+            grpc_server_ = std::move(builder.BuildAndStart());
+            LOGGER_INFOR(std::format("{} socket was configured into listening state: {}",
+                grpc_server_thread_name, sock_addr.to_string()));
+
+            grpc_server_->Wait();
+        });
+        ThreadHelpers::set_name(grpc_server_thread_.native_handle(), grpc_server_thread_name);
+    }
+    catch (std::exception& ex) {
+        LOGGER_ERROR(std::format("{} exception: {}", grpc_server_thread_name, ex.what()));
     }
 }

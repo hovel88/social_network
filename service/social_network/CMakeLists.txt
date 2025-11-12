@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 set(SERVICE_TARGET          social_network)
-set(SERVICE_VERSION         9)
+set(SERVICE_VERSION         10)
 project(${SERVICE_TARGET}
     VERSION                 ${SERVICE_VERSION}
     LANGUAGES               CXX
@@ -51,27 +51,38 @@ find_package(prometheus-cpp REQUIRED)
 # подготовка для генерации gRPC и Protobuf
 #
 
-get_filename_component(PROTO_PATH   "${CMAKE_CURRENT_SOURCE_DIR}/../pb/chat_service.proto" ABSOLUTE)
-get_filename_component(PROTO_DIR    "${PROTO_PATH}" DIRECTORY)
-
-set(GENERATED_DIR           "${CMAKE_CURRENT_SOURCE_DIR}/generated")
-file(MAKE_DIRECTORY         "${GENERATED_DIR}")
-
-set(PROTO_SRCS              "${GENERATED_DIR}/chat_service.pb.cc")
-set(PROTO_HDRS              "${GENERATED_DIR}/chat_service.pb.h")
-set(GRPC_SRCS               "${GENERATED_DIR}/chat_service.grpc.pb.cc")
-set(GRPC_HDRS               "${GENERATED_DIR}/chat_service.grpc.pb.h")
-
-add_custom_command(
-    OUTPUT "${PROTO_SRCS}" "${PROTO_HDRS}" "${GRPC_SRCS}" "${GRPC_HDRS}"
-    COMMAND protobuf::protoc
-    ARGS --grpc_out "${GENERATED_DIR}"
-         --cpp_out "${GENERATED_DIR}"
-         -I "${PROTO_DIR}"
-         --plugin=protoc-gen-grpc="$<TARGET_FILE:gRPC::grpc_cpp_plugin>"
-         "${PROTO_PATH}"
-    DEPENDS "${PROTO_PATH}"
+set(PROTO_SRCS              "")
+set(GRPC_SRCS               "")
+set(PB_DIR                  "${CMAKE_CURRENT_SOURCE_DIR}/../pb")
+file(GLOB                   PROTO_FILES
+    "${PB_DIR}/*.proto"
 )
+
+foreach(PROTO_FILE ${PROTO_FILES})
+    set(GENERATED_DIR           "${CMAKE_CURRENT_SOURCE_DIR}/generated")
+    file(MAKE_DIRECTORY         "${GENERATED_DIR}")
+
+    get_filename_component(PROTO_PATH   "${PROTO_FILE}" ABSOLUTE)
+    get_filename_component(PROTO_NAME   "${PROTO_PATH}" NAME_WE)
+    get_filename_component(PROTO_DIR    "${PROTO_PATH}" DIRECTORY)
+
+    set(GENERATED_PROTO_CC      "${GENERATED_DIR}/${PROTO_NAME}.pb.cc")
+    set(GENERATED_GRPC_CC       "${GENERATED_DIR}/${PROTO_NAME}.grpc.pb.cc")
+    list(APPEND     PROTO_SRCS  "${GENERATED_PROTO_CC}")
+    list(APPEND     GRPC_SRCS   "${GENERATED_GRPC_CC}")
+
+    add_custom_command(
+        OUTPUT "${GENERATED_PROTO_CC}" "${GENERATED_GRPC_CC}"
+        COMMAND protobuf::protoc
+        ARGS --grpc_out "${GENERATED_DIR}"
+            --cpp_out "${GENERATED_DIR}"
+            -I "${PROTO_DIR}"
+            --plugin=protoc-gen-grpc=/usr/bin/grpc_cpp_plugin
+            "${PROTO_PATH}"
+        DEPENDS "${PROTO_PATH}"
+        COMMENT "Generating C++ from ${PROTO_PATH}\n"
+    )
+endforeach()
 
 #
 # собираем все исходники в библиотеку

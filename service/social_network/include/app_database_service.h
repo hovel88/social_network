@@ -60,6 +60,10 @@ public:
         std::string error_str{};
         std::vector<Post> posts{};
     };
+    struct likes_rv {
+        std::string error_str{};
+        std::optional<int32_t> likes{};
+    };
     struct dialog_rv {
         std::string error_str{};
         std::vector<Message> messages{};
@@ -90,6 +94,8 @@ public:
     post_rv create_post(const std::string& content, const std::string& user_id);
     common_rv update_post(const std::string& post_id, const std::string& content, const std::string& user_id);
     common_rv delete_post(const std::string& post_id, const std::string& user_id);
+    likes_rv inc_post_likes(const std::string& post_id);
+    likes_rv dec_post_likes(const std::string& post_id);
     post_rv get_post(const std::string& post_id);
     posts_rv feed_post(const std::string& user_id, uint32_t limit);
 
