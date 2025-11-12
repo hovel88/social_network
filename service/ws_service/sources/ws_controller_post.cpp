@@ -79,6 +79,7 @@ void PostFeedWebSocket::handleNewConnection(const drogon::HttpRequestPtr& req,
 
     LOGGER_INFOR(std::format("<instance_addr={}> websocket: user_id={}, start processing", instance_addr, user_id));
     kafka_consumer->subscribe_to_user_topic(user_id);
+    kafka_consumer->subscribe_to_likes_topic(user_id);
 
     // сохраняем соединение
     std::lock_guard lock(connections_mtx_);
@@ -98,6 +99,7 @@ void PostFeedWebSocket::handleConnectionClosed(const drogon::WebSocketConnection
 
         LOGGER_INFOR(std::format("<instance_addr={}> websocket: user_id={}, stop processing", instance_addr, user_id));
         kafka_consumer->unsubscribe_from_user_topic(user_id);
+        kafka_consumer->unsubscribe_from_likes_topic(user_id);
 
         // удаляем соединение
         std::lock_guard lock(connections_mtx_);

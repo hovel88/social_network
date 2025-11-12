@@ -106,6 +106,40 @@ void KafkaConsumer::unsubscribe_from_user_topic(const std::string& user_id)
     LOGGER_DEBUG(std::format("KafkaConsumer: unsubscribe from topic '{}'", user_topic));
 }
 
+void KafkaConsumer::subscribe_to_likes_topic(const std::string& user_id)
+{
+    if (!consumer_) return;
+
+    std::string user_topic = "user_" + user_id + "_post_likes";
+
+    std::unique_lock lock(subscribed_topics_mtx_);
+    if (subscribed_topics_.find(user_topic) == subscribed_topics_.end()) {
+        subscribed_topics_.insert(user_topic);
+
+        // в Kafka подписка работает сразу на набор, т.е. новый набор заменяет существующий,
+        // поэтому надо формировать актуальный полный список топиков
+        std::vector<std::string> topics(subscribed_topics_.begin(), subscribed_topics_.end());
+        consumer_->subscribe(topics);
+        LOGGER_DEBUG(std::format("KafkaConsumer: subscribe to topic '{}'", user_topic));
+    }
+}
+
+void KafkaConsumer::unsubscribe_from_likes_topic(const std::string& user_id)
+{
+    if (!consumer_) return;
+
+    std::string user_topic = "user_" + user_id + "_post_likes";
+
+    std::unique_lock lock(subscribed_topics_mtx_);
+    subscribed_topics_.erase(user_topic);
+
+    // в Kafka подписка работает сразу на набор, т.е. новый набор заменяет существующий,
+    // поэтому надо формировать актуальный полный список топиков
+    std::vector<std::string> topics(subscribed_topics_.begin(), subscribed_topics_.end());
+    consumer_->subscribe(topics);
+    LOGGER_DEBUG(std::format("KafkaConsumer: unsubscribe from topic '{}'", user_topic));
+}
+
 void KafkaConsumer::start_consuming()
 {
     if (!consumer_) return;
@@ -145,13 +179,22 @@ void KafkaConsumer::start_consuming()
                     std::string msg(static_cast<const char*>(message->payload()), message->len());
                     std::string topic = message->topic_name();
 
-                    // извлекаем user_id из названия топика: "user_<uuid>_posts" -> "<uuid>"
-                    if (topic.find("user_")  == 0
-                    &&  topic.find("_posts") != std::string::npos) {
-                        std::string user_id = topic.substr(5, topic.find("_posts") - 5);
-
-                        if (handler_) {
-                            handler_(user_id, msg);
+                    // извлекаем user_id из названия топика
+                    if (topic.find("user_")  == 0) {
+                        auto pos = std::string::npos;
+                        // "user_<uuid>_posts" -> "<uuid>"
+                        if (topic.find("_posts") != std::string::npos) {
+                            pos = topic.find("_posts");
+                        } else
+                        // "user_<uuid>_post_likes" -> "<uuid>"
+                        if (topic.find("_post_likes") != std::string::npos) {
+                            pos = topic.find("_post_likes");
+                        }
+                        if (pos != std::string::npos) {
+                            std::string user_id = topic.substr(5, pos - 5);
+                            if (handler_) {
+                                handler_(user_id, msg);
+                            }
                         }
                     }
                 }

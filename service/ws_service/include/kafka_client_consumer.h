@@ -36,6 +36,8 @@ public:
     void initialize(const std::string& brokers);
     void subscribe_to_user_topic(const std::string& user_id);
     void unsubscribe_from_user_topic(const std::string& user_id);
+    void subscribe_to_likes_topic(const std::string& user_id);
+    void unsubscribe_from_likes_topic(const std::string& user_id);
     void start_consuming();
     void stop_consuming();
 
