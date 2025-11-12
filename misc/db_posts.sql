@@ -21,3 +21,13 @@ WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS posts_created_at_btree_idx 
 ON posts(created_at DESC) 
 WHERE deleted_at IS NULL;
+
+--
+-- добавляем новое поле
+-- и обновляем все имеющиеся записи
+--
+ALTER TABLE IF EXISTS posts 
+ADD COLUMN IF NOT EXISTS 
+    likes_count INTEGER     DEFAULT 0;
+
+UPDATE posts SET likes_count = 0 WHERE likes_count IS NULL;
