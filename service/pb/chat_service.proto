@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package social_network.chats;
 
-import "google/protobuf/timestamp.proto";
-
 service DialogService {
   rpc SendDialogMessage(SendDialogMessageRequest) returns (SendDialogMessageResponse);
   rpc ListDialogMessages(ListDialogMessagesRequest) returns (ListDialogMessagesResponse);

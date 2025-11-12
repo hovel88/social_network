@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package social_network.likes;
+
+service LikesService {
+  rpc IncrementLikeCountMessage(IncrementLikeCountMessageRequest) returns (IncrementLikeCountMessageResponse);
+  rpc DecrementLikeCountMessage(DecrementLikeCountMessageRequest) returns (DecrementLikeCountMessageResponse);
+  rpc GetAuthorFriendsMessages(GetAuthorFriendsMessagesRequest) returns (GetAuthorFriendsMessagesResponse);
+}
+
+message IncrementLikeCountMessageRequest {
+  string post_id = 1;
+  string saga_id = 2;
+}
+
+message IncrementLikeCountMessageResponse {
+  bool success = 1;
+  int32 new_count = 2;
+}
+
+message DecrementLikeCountMessageRequest {
+  string post_id = 1;
+  string saga_id = 2;
+}
+
+message DecrementLikeCountMessageResponse {
+  bool success = 1;
+  int32 new_count = 2;
+}
+
+message GetAuthorFriendsMessagesRequest {
+  string post_id = 1;
+  string saga_id = 2;
+}
+
+message GetAuthorFriendsMessagesResponse {
+  repeated string friend_ids = 1;
+}
