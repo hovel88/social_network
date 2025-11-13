@@ -416,6 +416,37 @@ DatabaseService::likes_rv DatabaseService::dec_post_likes(const std::string& pos
     return rv;
 }
 
+DatabaseService::likes_rv DatabaseService::get_post_likes(const std::string& post_id)
+{
+static const std::string query =
+        "SELECT likes_count "
+        "  FROM posts "
+        " WHERE post_id = $1";
+
+    likes_rv rv{};
+    try {
+        ScopedConnection scoped_conn(ConnectionPool::NodeType::MASTER);
+        metrics_->count_request_to_host(scoped_conn.node_tag());
+        LOGGER_TRACE(std::format("get_post_likes: {}", scoped_conn.to_string()));
+
+        pqxx::work tx(scoped_conn.get());
+        pqxx::result result = tx.exec(query, pqxx::params{post_id});
+        tx.commit();
+
+        rv.error_str.clear();
+        rv.likes = std::nullopt;
+
+        for (const auto& row : result) {
+            const auto& [row_likes] = row.as<int32_t>();
+            *rv.likes = row_likes;
+            break;
+        }
+    } catch (std::exception& ex) {
+        rv.error_str = std::format("SQL exception: {} (query: {})", ex.what(), query);
+    }
+    return rv;
+}
+
 DatabaseService::post_rv DatabaseService::get_post(const std::string& post_id)
 {
     static const std::string query =

@@ -2,7 +2,7 @@
 -- таблица сведений о лайках (кто поставил, на какой пост, когда, в рамках какой SAGA)
 --
 CREATE TABLE IF NOT EXISTS post_likes (
-    like_id     BIGSERIAL    PRIMARY KEY,
+    id          BIGSERIAL    PRIMARY KEY,
     user_id     UUID         NOT NULL,
     post_id     UUID         NOT NULL,
     saga_id     VARCHAR(100) NOT NULL,

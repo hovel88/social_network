@@ -3,9 +3,19 @@ syntax = "proto3";
 package social_network.likes;
 
 service LikesService {
+  rpc GetLikesCountMessage(GetLikesCountMessageRequest) returns (GetLikesCountMessageResponse);
   rpc IncrementLikeCountMessage(IncrementLikeCountMessageRequest) returns (IncrementLikeCountMessageResponse);
   rpc DecrementLikeCountMessage(DecrementLikeCountMessageRequest) returns (DecrementLikeCountMessageResponse);
   rpc GetAuthorFriendsMessages(GetAuthorFriendsMessagesRequest) returns (GetAuthorFriendsMessagesResponse);
+}
+
+message GetLikesCountMessageRequest {
+  string post_id = 1;
+}
+
+message GetLikesCountMessageResponse {
+  bool success = 1;
+  int32 count = 2;
 }
 
 message IncrementLikeCountMessageRequest {

@@ -14,6 +14,35 @@ static std::string proto_message_to_str_(const google::protobuf::Message& obj)
 
 // --------------------------------------------------------
 
+grpc::Status GrpcLikesService::GetLikesCountMessage(grpc::ServerContext* /*context*/,
+                                                    const social_network::likes::GetLikesCountMessageRequest* request,
+                                                    social_network::likes::GetLikesCountMessageResponse* response)
+{
+    LOGGER_TRACE(std::format("GetLikesCountMessage: recv Protobuf: {}", proto_message_to_str_(*request)));
+    const std::string post_id{request->post_id()};
+
+    std::string err{};
+    try {
+        auto rv = db_->get_post_likes(post_id);
+        if (!rv.error_str.empty()) {
+            err = rv.error_str;
+        } else {
+            response->set_success(true);
+            response->set_count(rv.likes.value());
+            LOGGER_TRACE(std::format("GetLikesCountMessage: resp Protobuf: {}", proto_message_to_str_(*response)));
+            return grpc::Status::OK;
+        }
+    } catch (std::exception& ex) {
+        err = std::format("GetLikesCountMessage exception: {} (post_id: {})", ex.what(), post_id);
+    }
+
+    if (!err.empty()) {
+        LOGGER_ERROR(err);
+    }
+    response->set_success(false);
+    return grpc::Status(grpc::StatusCode::INTERNAL, err);
+}
+
 grpc::Status GrpcLikesService::IncrementLikeCountMessage(grpc::ServerContext* /*context*/,
                                                          const social_network::likes::IncrementLikeCountMessageRequest* request,
                                                          social_network::likes::IncrementLikeCountMessageResponse* response)

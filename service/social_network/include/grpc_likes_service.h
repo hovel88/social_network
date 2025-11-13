@@ -22,6 +22,10 @@ public:
     :   logger_(std::move(logger)),
         db_(std::move(db)) {}
 
+    virtual grpc::Status GetLikesCountMessage(grpc::ServerContext* context,
+                                              const social_network::likes::GetLikesCountMessageRequest* request,
+                                              social_network::likes::GetLikesCountMessageResponse* response) override;
+
     virtual grpc::Status IncrementLikeCountMessage(grpc::ServerContext* context,
                                                    const social_network::likes::IncrementLikeCountMessageRequest* request,
                                                    social_network::likes::IncrementLikeCountMessageResponse* response) override;
