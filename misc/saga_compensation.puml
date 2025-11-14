@@ -1,0 +1,75 @@
+@startuml SAGA_Добавление_Лайка_С_Компенсацией
+
+actor "Пользователь" as User
+participant "HttpLikesController" as LC
+participant "LikesSaga" as Saga
+participant "PostLikesRepo" as Repo
+participant "SocialNetwork\n(gRPC)" as Social
+participant "KafkaProducer" as Kafka
+
+== Успешное выполнение ==
+
+User -> LC: POST /likes/:post_id\nAuthorization user_id
+activate LC
+LC -> Saga: add_like(user_id, post_id)
+activate Saga
+
+Saga -> Repo: update_like(saga_id, user_id, post_id, "INCREMENT")
+activate Repo
+Repo --> Saga: success
+deactivate Repo
+
+Saga -> Social: increment_likes(saga_id, post_id)
+activate Social
+Social --> Saga: success
+deactivate Social
+
+Saga -> Social: get_author_friends(post_id)
+activate Social
+Social --> Saga: [friend_ids]
+deactivate Social
+
+Saga -> Kafka: produce_to_user_topics(friend_ids, post_data)
+activate Kafka
+Kafka --> Saga: success
+deactivate Kafka
+
+Saga --> LC: success, saga_id
+deactivate Saga
+LC --> User: 200 OK
+
+== Сценарий с ошибкой и компенсацией ==
+
+User -> LC: POST /likes/:post_id\nAuthorization user_id
+activate LC
+LC -> Saga: add_like(user_id, post_id)
+activate Saga
+
+Saga -> Repo: update_like(saga_id, user_id, post_id, "INCREMENT")
+activate Repo
+Repo --> Saga: success
+deactivate Repo
+
+Saga -> Social: increment_likes(saga_id, post_id)
+activate Social
+Social --> Saga: ERROR\n(gRPC failure)
+deactivate Social
+
+group Компенсация
+    Saga -> Saga: compensate_saga()
+    Saga -> Social: decrement_likes(saga_id)
+    activate Social
+    Social --> Saga: success
+    deactivate Social
+    
+    Saga -> Repo: remove_like_by_saga(saga_id)
+    activate Repo
+    Repo --> Saga: success
+    deactivate Repo
+end
+
+Saga --> LC: error, saga_id
+deactivate Saga
+LC --> User: 500 Error
+
+@enduml

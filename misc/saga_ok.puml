@@ -1,0 +1,81 @@
+@startuml SAGA_Добавление_Лайка
+
+actor "Пользователь" as User
+participant "HttpLikesController" as LC
+participant "LikesSaga" as Saga
+participant "PostLikesRepo" as Repo
+participant "SocialNetwork\n(gRPC)" as Social
+participant "KafkaProducer" as Kafka
+participant "WsService\n(Kafka Consumer)" as WS
+
+== Инициализация SAGA ==
+
+User -> LC: POST /likes/:post_id\nAuthorization user_id
+activate LC
+
+LC -> Saga: add_like(user_id, post_id)
+activate Saga
+
+Saga -> Saga: generate saga_id
+Saga -> Saga: update_status(PENDING)
+
+== Шаг 1: Запись лайка в БД ==
+
+Saga -> Repo: update_like(saga_id, user_id, post_id, "INCREMENT")
+activate Repo
+
+Repo -> Repo: INSERT INTO post_likes\nVALUES(saga_id, user_id, post_id, op_type)
+Repo --> Saga: success
+deactivate Repo
+
+Saga -> Saga: update_status(IN_PROGRESS, "Like recorded")
+
+== Шаг 2: Инкремент счетчика в SocialService ==
+
+Saga -> Social: <gRPC> increment_likes(saga_id, post_id)
+activate Social
+
+Social -> Social: UPDATE posts SET likes_count + 1\nWHERE post_id = ?
+Social --> Saga: success, new_count
+deactivate Social
+
+Saga -> Saga: update_status(IN_PROGRESS, "Counter incremented")
+
+== Шаг 3: Получение друзей автора ==
+
+Saga -> Social: <gRPC> get_author_friends(post_id)
+activate Social
+
+Social -> Social: SELECT friend_id FROM friends\nWHERE user_id = author_id
+Social --> Saga: success, [friend_ids]
+deactivate Social
+
+Saga -> Saga: update_status(IN_PROGRESS, "Friends retrieved")
+
+== Шаг 4: Уведомление друзей через Kafka ==
+
+Saga -> Kafka: Produce messages to topics
+activate Kafka
+
+loop Для каждого friend_id
+    Kafka -> Kafka: Produce to "user_{friend_id}_post_likes"
+    Kafka -> WS: Message delivery
+    activate WS
+    WS -> WS: Update WebSocket clients
+    deactivate WS
+end
+
+Kafka --> Saga: success
+deactivate Kafka
+
+Saga -> Saga: update_status(COMPLETED, "SAGA completed")
+
+== Возврат ответа ==
+
+Saga --> LC: saga_id
+deactivate Saga
+
+LC -> LC: Format JSON response
+LC --> User: 200 OK\n{success: true, total_likes, saga_id, message}
+
+@enduml
