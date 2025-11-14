@@ -7,8 +7,7 @@ CREATE TABLE IF NOT EXISTS post_likes (
     post_id     UUID         NOT NULL,
     saga_id     VARCHAR(100) NOT NULL,
     op_type     VARCHAR(20)  NOT NULL,
-    created_at  TIMESTAMP    DEFAULT NOW(),
-    UNIQUE(user_id, post_id)
+    created_at  TIMESTAMP    DEFAULT NOW()
 );
 
 CREATE INDEX idx_post_likes_post_id ON post_likes(post_id);
