@@ -1,0 +1,356 @@
+networks:
+  net:
+    driver: bridge
+  # test:
+  #   external: true  # не забыть объявить до запуска скрипта
+
+volumes:
+  prometheus-storage:
+  grafana-storage:
+  etcd-0-data:
+  etcd-1-data:
+  etcd-2-data:
+  patroni-0-data:
+  patroni-1-data:
+  patroni-2-data:
+
+services:
+  #
+  # кластер распределенной системы хранения конфигурации (DCS)
+  # в виде узлов etcd, обеспечиваем кворум
+  #
+  etcd0:
+    image: quay.io/coreos/etcd:v3.5.15
+    container_name: "etcd0"
+    hostname: "etcd0"
+    # restart: on-failure
+    environment:
+      - ETCD_NAME=etcd0
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd0:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd0:2380
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_CLUSTER_TOKEN=etcd-cluster
+      - ETCD_INITIAL_CLUSTER=etcd0=http://etcd0:2380,etcd1=http://etcd1:2380,etcd2=http://etcd2:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_ENABLE_V2=true
+      - ETCD_ELECTION_TIMEOUT=1000
+      - ETCD_HEARTBEAT_INTERVAL=100
+      - ETCD_DATA_DIR=/etcd_data
+    volumes:
+      - etcd-0-data:/etcd_data
+    networks:
+      - net
+    ports:
+      - 2379:2379
+
+
+  etcd1:
+    image: quay.io/coreos/etcd:v3.5.15
+    container_name: "etcd1"
+    hostname: "etcd1"
+    # restart: on-failure
+    environment:
+      - ETCD_NAME=etcd1
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd1:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd1:2380
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_CLUSTER_TOKEN=etcd-cluster
+      - ETCD_INITIAL_CLUSTER=etcd0=http://etcd0:2380,etcd1=http://etcd1:2380,etcd2=http://etcd2:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_ENABLE_V2=true
+      - ETCD_ELECTION_TIMEOUT=1000
+      - ETCD_HEARTBEAT_INTERVAL=100
+      - ETCD_DATA_DIR=/etcd_data
+    volumes:
+      - etcd-1-data:/etcd_data
+    networks:
+      - net
+    # ports:
+    #   - 2379:2379
+
+
+  etcd2:
+    image: quay.io/coreos/etcd:v3.5.15
+    container_name: "etcd2"
+    hostname: "etcd2"
+    # restart: on-failure
+    environment:
+      - ETCD_NAME=etcd2
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd2:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd2:2380
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_CLUSTER_TOKEN=etcd-cluster
+      - ETCD_INITIAL_CLUSTER=etcd0=http://etcd0:2380,etcd1=http://etcd1:2380,etcd2=http://etcd2:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_ENABLE_V2=true
+      - ETCD_ELECTION_TIMEOUT=1000
+      - ETCD_HEARTBEAT_INTERVAL=100
+      - ETCD_DATA_DIR=/etcd_data
+    volumes:
+      - etcd-2-data:/etcd_data
+    networks:
+      - net
+    # ports:
+    #   - 2379:2379
+
+
+  #
+  # кластер системы управления распределенными базами PostgreSQL
+  # в виде узлов PostgreSQL под управлением Patroni
+  #
+  pg_patroni0:
+    build:
+      context: ./load_balancing/patroni/
+      dockerfile: Dockerfile
+    container_name: "pg_patroni0"
+    hostname: "pg_patroni0"
+    restart: no       # always, on-failure, unless-stopped, no (by default)
+    # environment: # настройки можно применять через ENV или файлом patroni.yml
+      # - PATRONI_SCOPE=patroni-cluster
+      # - PATRONI_NAME=pg_patroni0
+      # - PATRONI_RESTAPI_CONNECT_ADDRESS=pg_patroni0:8008
+      # - PATRONI_RESTAPI_LISTEN=0.0.0.0:8008
+      # - PATRONI_ETCD_HOSTS=etcd0:2379,etcd1:2379,etcd2:2379
+      # - PATRONI_POSTGRESQL_CONNECT_ADDRESS=pg_patroni0:5432
+      # - PATRONI_POSTGRESQL_LISTEN=0.0.0.0:5432
+      # - PATRONI_POSTGRESQL_DATA_DIR=/var/lib/postgresql/data
+      # - PATRONI_POSTGRESQL_PGPASS=/tmp/pgpass
+      # - PATRONI_SUPERUSER_USERNAME=${ENV_POSTGRES_USER}
+      # - PATRONI_SUPERUSER_PASSWORD=${ENV_POSTGRES_PASSWORD}
+      # - PATRONI_REPLICATION_USERNAME=replicator
+      # - PATRONI_REPLICATION_PASSWORD=rpass
+    depends_on:
+      - etcd0
+      - etcd1
+      - etcd2
+    volumes:
+      - patroni-0-data:/var/lib/postgresql/data
+      - ./load_balancing/patroni/patroni_0.yml:/etc/patroni/patroni.yml
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - net
+    ports:
+      - 5400:5432
+      - 8008:8008
+
+
+  pg_patroni1:
+    build:
+      context: ./load_balancing/patroni/
+      dockerfile: Dockerfile
+    container_name: "pg_patroni1"
+    hostname: "pg_patroni1"
+    restart: no       # always, on-failure, unless-stopped, no (by default)
+    # environment: # настройки можно применять через ENV или файлом patroni.yml
+      # - PATRONI_SCOPE=patroni-cluster
+      # - PATRONI_NAME=pg_patroni1
+      # - PATRONI_RESTAPI_CONNECT_ADDRESS=pg_patroni1:8008
+      # - PATRONI_RESTAPI_LISTEN=0.0.0.0:8008
+      # - PATRONI_ETCD_HOSTS=etcd0:2379,etcd1:2379,etcd2:2379
+      # - PATRONI_POSTGRESQL_CONNECT_ADDRESS=pg_patroni1:5432
+      # - PATRONI_POSTGRESQL_LISTEN=0.0.0.0:5432
+      # - PATRONI_POSTGRESQL_DATA_DIR=/var/lib/postgresql/data
+      # - PATRONI_POSTGRESQL_PGPASS=/tmp/pgpass
+      # - PATRONI_SUPERUSER_USERNAME=${ENV_POSTGRES_USER}
+      # - PATRONI_SUPERUSER_PASSWORD=${ENV_POSTGRES_PASSWORD}
+      # - PATRONI_REPLICATION_USERNAME=replicator
+      # - PATRONI_REPLICATION_PASSWORD=rpass
+    depends_on:
+      - etcd0
+      - etcd1
+      - etcd2
+      - pg_patroni0
+    volumes:
+      - patroni-1-data:/var/lib/postgresql/data
+      - ./load_balancing/patroni/patroni_1.yml:/etc/patroni/patroni.yml
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - net
+    ports:
+      - 5401:5432
+      - 8018:8008
+
+
+  pg_patroni2:
+    build:
+      context: ./load_balancing/patroni/
+      dockerfile: Dockerfile
+    container_name: "pg_patroni2"
+    hostname: "pg_patroni2"
+    restart: no       # always, on-failure, unless-stopped, no (by default)
+    # environment: # настройки можно применять через ENV или файлом patroni.yml
+      # - PATRONI_SCOPE=patroni-cluster
+      # - PATRONI_NAME=pg_patroni2
+      # - PATRONI_RESTAPI_CONNECT_ADDRESS=pg_patroni2:8008
+      # - PATRONI_RESTAPI_LISTEN=0.0.0.0:8008
+      # - PATRONI_ETCD_HOSTS=etcd0:2379,etcd1:2379,etcd2:2379
+      # - PATRONI_POSTGRESQL_CONNECT_ADDRESS=pg_patroni2:5432
+      # - PATRONI_POSTGRESQL_LISTEN=0.0.0.0:5432
+      # - PATRONI_POSTGRESQL_DATA_DIR=/var/lib/postgresql/data
+      # - PATRONI_POSTGRESQL_PGPASS=/tmp/pgpass
+      # - PATRONI_SUPERUSER_USERNAME=${ENV_POSTGRES_USER}
+      # - PATRONI_SUPERUSER_PASSWORD=${ENV_POSTGRES_PASSWORD}
+      # - PATRONI_REPLICATION_USERNAME=replicator
+      # - PATRONI_REPLICATION_PASSWORD=rpass
+    depends_on:
+      - etcd0
+      - etcd1
+      - etcd2
+      - pg_patroni0
+      - pg_patroni1
+    volumes:
+      - patroni-2-data:/var/lib/postgresql/data
+      - ./load_balancing/patroni/patroni_2.yml:/etc/patroni/patroni.yml
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - net
+    ports:
+      - 5402:5432
+      - 8028:8008
+
+
+  #
+  # балансировщик нагрузки на распределенную систему Patroni
+  #
+  haproxy_lb:
+    image: haproxy:2.4.29-alpine
+    container_name: "haproxy_lb"
+    hostname: "haproxy_lb"
+    # restart: on-failure
+    depends_on:
+      pg_patroni0:
+        condition: service_healthy
+      pg_patroni1:
+        condition: service_healthy
+      pg_patroni2:
+        condition: service_healthy
+    volumes:
+      - ./load_balancing/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+    networks:
+      - net
+    ports:
+      - 8180:8404                                   # посмотреть статус haproxy
+      - ${ENV_POSTGRES_MASTER_EXTERNAL_PORT}:5000   # балансировка postgres (master)
+      - ${ENV_POSTGRES_REPLICA_EXTERNAL_PORT}:5001  # балансировка postgres (replicas)
+
+
+  social_srv:
+    image: ${ENV_SOCIAL_SERVICE_IMAGE}
+    container_name: "social_srv"
+    hostname: "social_srv"
+    restart: no       # always, on-failure, unless-stopped, no (by default)
+    depends_on:
+      - haproxy_lb
+      - kafka
+    environment:
+      - PGSQL_MASTER_URL=postgresql://${ENV_POSTGRES_USER}:${ENV_POSTGRES_PASSWORD}@haproxy_lb:5000/postgres
+      - PGSQL_REPLICA_URL=postgresql://${ENV_POSTGRES_USER}:${ENV_POSTGRES_PASSWORD}@haproxy_lb:5001/postgres
+      - GRPC_LISTENING=0.0.0.0:50051
+      - KAFKA_URL=tcp://kafka:9092
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=4096
+      - HTTP_THREADS_COUNT=1
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
+    ports:
+      - ${ENV_SOCIAL_HTTP_EXTERNAL_PORT}:6000
+      # - ${ENV_SOCIAL_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
+
+
+  ws_srv:
+    image: ${ENV_WS_SERVICE_IMAGE}
+    container_name: "ws_srv"
+    hostname: "ws_srv"
+    # restart: on-failure
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_URL=tcp://kafka:9092
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=4096
+      - HTTP_THREADS_COUNT=1
+      - PROMETHEUS_PORT=6001
+    networks:
+      - net
+    ports:
+      - ${ENV_WS_HTTP_EXTERNAL_PORT}:6000
+      # - ${ENV_WS_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
+
+
+  likes_srv:
+    image: ${ENV_LIKES_SERVICE_IMAGE}
+    container_name: "likes_srv"
+    hostname: "likes_srv"
+    # restart: on-failure
+    depends_on:
+      - social_srv
+      - kafka
+    environment:
+      - PGSQL_MASTER_URL=postgresql://${ENV_POSTGRES_USER}:${ENV_POSTGRES_PASSWORD}@haproxy_lb:5000/postgres
+      - PGSQL_REPLICA_URL=postgresql://${ENV_POSTGRES_USER}:${ENV_POSTGRES_PASSWORD}@haproxy_lb:5001/postgres
+      - GRPC_URL=grpc://social_srv:50051
+      - KAFKA_URL=tcp://kafka:9092
+      - HTTP_LISTENING=0.0.0.0:6000
+      - HTTP_QUEUE_CAPACITY=4096
+      - HTTP_THREADS_COUNT=1
+    networks:
+      - net
+    ports:
+      - ${ENV_LIKES_HTTP_EXTERNAL_PORT}:6000
+      # - ${ENVLIKES_PROM_EXTERNAL_PORT}:6001   # для метрик Prometheus
+
+
+  kafka:
+    image: bitnami/kafka:3.9.0
+    container_name: "kafka"
+    hostname: "kafka"
+    # restart: on-failure
+    environment:
+      # KRaft
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      # Listeners
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      # Config parameters
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_CFG_NUM_PARTITIONS=10
+      - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=1
+      - KAFKA_CFG_RETENTION_MS=604800000
+      - KAFKA_CFG_BACKGROUND_THREADS=3
+    networks:
+      - net
+    ports:
+      - 9092:9092
+
+
+  kafka_ui:
+    image: provectuslabs/kafka-ui:v0.4.0
+    container_name: "kafka_ui"
+    hostname: "kafka_ui"
+    # restart: on-failure
+    environment:
+      - KAFKA_CLUSTERS_0_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_CLUSTERS_0_NAME=kraft
+    networks:
+      - net
+    ports:
+      - 8090:8080
