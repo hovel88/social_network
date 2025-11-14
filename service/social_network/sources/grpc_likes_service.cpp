@@ -28,7 +28,7 @@ grpc::Status GrpcLikesService::GetLikesCountMessage(grpc::ServerContext* /*conte
             err = rv.error_str;
         } else {
             response->set_success(true);
-            response->set_count(rv.likes.value());
+            response->set_count(rv.likes);
             LOGGER_TRACE(std::format("GetLikesCountMessage: resp Protobuf: {}", proto_message_to_str_(*response)));
             return grpc::Status::OK;
         }
@@ -58,7 +58,7 @@ grpc::Status GrpcLikesService::IncrementLikeCountMessage(grpc::ServerContext* /*
             err = rv.error_str;
         } else {
             response->set_success(true);
-            response->set_new_count(rv.likes.value());
+            response->set_new_count(rv.likes);
             LOGGER_TRACE(std::format("IncrementLikeCountMessage: resp Protobuf: {}", proto_message_to_str_(*response)));
             return grpc::Status::OK;
         }
@@ -88,7 +88,7 @@ grpc::Status GrpcLikesService::DecrementLikeCountMessage(grpc::ServerContext* /*
             err = rv.error_str;
         } else {
             response->set_success(true);
-            response->set_new_count(rv.likes.value());
+            response->set_new_count(rv.likes);
             LOGGER_TRACE(std::format("DecrementLikeCountMessage: resp Protobuf: {}", proto_message_to_str_(*response)));
             return grpc::Status::OK;
         }

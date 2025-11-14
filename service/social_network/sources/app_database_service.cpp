@@ -357,7 +357,7 @@ DatabaseService::likes_rv DatabaseService::inc_post_likes(const std::string& pos
     static const std::string query =
         "UPDATE posts "
         "   SET likes_count = likes_count + 1 "
-        " WHERE post_id = $1 "
+        " WHERE id = $1 "
         "RETURNING likes_count";
 
     likes_rv rv{};
@@ -371,11 +371,10 @@ DatabaseService::likes_rv DatabaseService::inc_post_likes(const std::string& pos
         tx.commit();
 
         rv.error_str.clear();
-        rv.likes = std::nullopt;
 
         for (const auto& row : result) {
             const auto& [row_likes] = row.as<int32_t>();
-            *rv.likes = row_likes;
+            rv.likes = row_likes;
             break;
         }
     } catch (std::exception& ex) {
@@ -389,7 +388,7 @@ DatabaseService::likes_rv DatabaseService::dec_post_likes(const std::string& pos
     static const std::string query =
         "UPDATE posts "
         "   SET likes_count = GREATEST(likes_count - 1, 0) "
-        " WHERE post_id = $1 "
+        " WHERE id = $1 "
         "RETURNING likes_count";
 
     likes_rv rv{};
@@ -403,11 +402,10 @@ DatabaseService::likes_rv DatabaseService::dec_post_likes(const std::string& pos
         tx.commit();
 
         rv.error_str.clear();
-        rv.likes = std::nullopt;
 
         for (const auto& row : result) {
             const auto& [row_likes] = row.as<int32_t>();
-            *rv.likes = row_likes;
+            rv.likes = row_likes;
             break;
         }
     } catch (std::exception& ex) {
@@ -421,7 +419,7 @@ DatabaseService::likes_rv DatabaseService::get_post_likes(const std::string& pos
 static const std::string query =
         "SELECT likes_count "
         "  FROM posts "
-        " WHERE post_id = $1";
+        " WHERE id = $1";
 
     likes_rv rv{};
     try {
@@ -434,11 +432,10 @@ static const std::string query =
         tx.commit();
 
         rv.error_str.clear();
-        rv.likes = std::nullopt;
 
         for (const auto& row : result) {
             const auto& [row_likes] = row.as<int32_t>();
-            *rv.likes = row_likes;
+            rv.likes = row_likes;
             break;
         }
     } catch (std::exception& ex) {

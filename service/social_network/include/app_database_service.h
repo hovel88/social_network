@@ -62,7 +62,7 @@ public:
     };
     struct likes_rv {
         std::string error_str{};
-        std::optional<int32_t> likes{};
+        int32_t likes{0};
     };
     struct dialog_rv {
         std::string error_str{};
